@@ -17,16 +17,24 @@ let editor;
 let applying = false; // 우리가 직접 글자를 바꾸는 중(이때 생기는 입력 신호는 무시)
 let lastConv = null; // 방금 한 자동 변환 — 바로 백스페이스 누르면 되돌리기 위해 기억
 
-// start~end 구간을 text로 바꾼다. Ctrl+Z(실행 취소)가 살아 있도록 브라우저 편집 명령을 쓴다.
+// 폰·태블릿(터치 화면)인지. 태블릿 크롬은 "PC 버전"으로 접속하기도 해서 이름표 대신 터치 여부로 본다.
+const isTouch = () => navigator.maxTouchPoints > 0 && window.matchMedia('(any-pointer: coarse)').matches;
+
+// start~end 구간을 text로 바꾼다.
+//  - PC: 브라우저 편집 명령으로 바꿔서 Ctrl+Z(실행 취소)가 살아 있게 한다.
+//  - 폰·태블릿: 글자를 직접 갈아 끼운다. 편집 명령으로 바꾸면 화면 키보드가 그 자리를
+//    "입력 중"으로 착각해서 밑줄이 남는다(갤럭시 탭 삼성 키보드에서 확인됨).
 function replaceRange(start, end, text) {
   editor.focus();
   editor.setSelectionRange(start, end);
   applying = true;
   let ok = false;
-  try {
-    ok = document.execCommand('insertText', false, text);
-  } catch {
-    ok = false;
+  if (!isTouch()) {
+    try {
+      ok = document.execCommand('insertText', false, text);
+    } catch {
+      ok = false;
+    }
   }
   if (!ok) {
     editor.setRangeText(text, start, end, 'end');
@@ -73,6 +81,14 @@ function onInput(e) {
   const type = e.inputType ?? '';
   if (type.startsWith('delete') || type.startsWith('history')) return;
   if (type === 'insertFromPaste' || type === 'insertFromDrop') return;
+
+  // 폰·태블릿은 화면 키보드가 자기 할 일을 끝낸 다음(아주 잠깐 뒤)에 바꾼다.
+  if (isTouch()) setTimeout(convert, 0, prevConv);
+  else convert(prevConv);
+}
+
+// 커서 바로 앞 글자를 보고 바꿀 게 있으면 바꾼다.
+function convert(prevConv) {
   if (editor.selectionStart !== editor.selectionEnd) return;
 
   const pos = editor.selectionStart;
