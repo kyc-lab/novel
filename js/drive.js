@@ -98,6 +98,9 @@ export function signOut() {
   localStorage.removeItem(TOKEN_KEY);
   localStorage.removeItem(USER_KEY);
   localStorage.removeItem(FOLDER_KEY);
+  Object.keys(localStorage)
+    .filter((k) => k.startsWith('driveSub:'))
+    .forEach((k) => localStorage.removeItem(k));
   notify();
 }
 
@@ -136,6 +139,71 @@ export async function call(path, { method = 'GET', body, headers = {}, raw = fal
   }
   if (raw) return res;
   return res.status === 204 ? null : res.json();
+}
+
+const UPLOAD = 'https://www.googleapis.com/upload/drive/v3';
+
+// 앱 폴더 안의 하위 폴더(예: PDF) ID. 없으면 만든다.
+export async function ensureSubfolder(name) {
+  const key = 'driveSub:' + name;
+  const saved = localStorage.getItem(key);
+  if (saved) return saved;
+  const parent = await ensureFolder();
+  const q = encodeURIComponent(
+    `name = '${name}' and '${parent}' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false`,
+  );
+  const found = await call(`/files?q=${q}&fields=files(id)&orderBy=createdTime`);
+  let id = found.files[0]?.id;
+  if (!id) {
+    const created = await call('/files?fields=id', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, parents: [parent], mimeType: 'application/vnd.google-apps.folder' }),
+    });
+    id = created.id;
+  }
+  localStorage.setItem(key, id);
+  return id;
+}
+
+// 파일(PDF 등)을 올린다. fileId가 있고 그 파일이 아직 있으면 내용만 바꾼다. 올라간 파일의 ID를 돌려준다.
+export async function uploadFile({ name, parent, mimeType, blob, fileId }) {
+  if (fileId) {
+    try {
+      const meta = await call(`/files/${fileId}?fields=trashed`);
+      if (!meta.trashed) {
+        await call(`/files/${fileId}?uploadType=media&fields=id`, {
+          base: UPLOAD,
+          method: 'PATCH',
+          headers: { 'Content-Type': mimeType },
+          body: blob,
+        });
+        // 회차 제목이 바뀌었을 수 있으니 파일 이름도 맞춘다.
+        await call(`/files/${fileId}?fields=id`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name }),
+        });
+        return fileId;
+      }
+    } catch (err) {
+      if (err.status !== 404) throw err;
+    }
+  }
+  const boundary = 'jipil' + Date.now();
+  const body = new Blob([
+    `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify({ name, parents: [parent], mimeType })}\r\n`,
+    `--${boundary}\r\nContent-Type: ${mimeType}\r\n\r\n`,
+    blob,
+    `\r\n--${boundary}--`,
+  ]);
+  const res = await call('/files?uploadType=multipart&fields=id', {
+    base: UPLOAD,
+    method: 'POST',
+    headers: { 'Content-Type': `multipart/related; boundary=${boundary}` },
+    body,
+  });
+  return res.id;
 }
 
 // 앱 폴더의 ID. 없으면 만든다.

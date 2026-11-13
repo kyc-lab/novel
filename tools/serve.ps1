@@ -1,6 +1,7 @@
 # 내 PC에서 앱을 미리 열어보기 위한 작은 서버. (이 PC 안에서만 접속 가능)
 # 주소: http://localhost:8123/
-param([int]$Port = 8123)
+# -SaveDir 를 주면(시험용) POST /__save?name=파일이름 으로 보낸 내용을 그 폴더에 저장한다.
+param([int]$Port = 8123, [string]$SaveDir = '')
 
 $root = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $types = @{
@@ -12,6 +13,7 @@ $types = @{
   '.svg'  = 'image/svg+xml'
   '.png'  = 'image/png'
   '.ico'  = 'image/x-icon'
+  '.pdf'  = 'application/pdf'
   '.woff2' = 'font/woff2'
   '.ttf'  = 'font/ttf'
   '.otf'  = 'font/otf'
@@ -27,6 +29,15 @@ try {
     $ctx = $listener.GetContext()
     $res = $ctx.Response
     try {
+      if ($SaveDir -and $ctx.Request.HttpMethod -eq 'POST' -and $ctx.Request.Url.AbsolutePath -eq '/__save') {
+        $name = [IO.Path]::GetFileName($ctx.Request.QueryString['name'])
+        New-Item -ItemType Directory -Force $SaveDir | Out-Null
+        $fs = [IO.File]::Create((Join-Path $SaveDir $name))
+        $ctx.Request.InputStream.CopyTo($fs)
+        $fs.Close()
+        $res.StatusCode = 204
+        continue
+      }
       $rel = [Uri]::UnescapeDataString($ctx.Request.Url.AbsolutePath).TrimStart('/')
       if ($rel -eq '' -or $rel.EndsWith('/')) { $rel += 'index.html' }
       $path = [IO.Path]::GetFullPath((Join-Path $root $rel))

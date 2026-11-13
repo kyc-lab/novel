@@ -48,7 +48,12 @@ export function install() {
     if (!id && method === 'POST') {
       d.seq++;
       const fid = 'f' + d.seq;
-      if (upload) {
+      if (upload && init.body instanceof Blob) {
+        // PDF 같은 파일: 내용은 담지 않고 이름과 크기만 기억한다.
+        const head = await init.body.slice(0, 2000).text();
+        const meta = JSON.parse(head.match(/\{.*\}/)[0]);
+        d.files[fid] = { id: fid, seq: d.seq, name: meta.name, binary: true, size: init.body.size, content: '{}', md5: 'bin' + init.body.size, modified: Date.now() };
+      } else if (upload) {
         const boundary = init.headers['Content-Type'].split('boundary=')[1];
         const parts = init.body.split('--' + boundary).slice(1, -1).map((p) => p.split('\r\n\r\n').slice(1).join('\r\n\r\n').replace(/\r\n$/, ''));
         const meta = JSON.parse(parts[0]);
@@ -69,7 +74,11 @@ export function install() {
       return json({ id: f.id, md5Checksum: f.md5, trashed: !!f.trashed });
     }
     if (method === 'PATCH') {
-      if (upload) {
+      if (upload && init.body instanceof Blob) {
+        f.size = init.body.size;
+        f.md5 = 'bin' + f.size;
+        f.modified = Date.now();
+      } else if (upload) {
         f.content = init.body;
         f.md5 = hash(init.body);
         f.modified = Date.now();

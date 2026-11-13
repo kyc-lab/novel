@@ -3,7 +3,8 @@
 //       안 되거나 3초 넘게 걸리면 기기에 담아 둔 파일을 쓴다.
 // 원고는 여기가 아니라 IndexedDB에 따로 저장되므로 이 파일과 무관하게 안전하다.
 
-const CACHE = 'jipil-v8';
+const CACHE = 'jipil-v9';
+const FONT_CACHE = 'jipil-fonts-v1'; // 글꼴 전용(앱을 고쳐 올려도 지우지 않는다)
 const FILES = [
   './',
   'index.html',
@@ -19,6 +20,7 @@ const FILES = [
   'js/drive.js',
   'js/sync.js',
   'js/history.js',
+  'js/pdf.js',
   'icons/icon-192.png',
   'icons/icon-512.png',
 ];
@@ -37,7 +39,7 @@ self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches
       .keys()
-      .then((keys) => Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k))))
+      .then((keys) => Promise.all(keys.filter((k) => k !== CACHE && k !== FONT_CACHE).map((k) => caches.delete(k))))
       .then(() => self.clients.claim()),
   );
 });
@@ -46,6 +48,21 @@ self.addEventListener('fetch', (event) => {
   const req = event.request;
   if (req.method !== 'GET') return;
   if (new URL(req.url).origin !== self.location.origin) return; // 다른 사이트(구글·AI) 요청은 건드리지 않는다
+
+  // 글꼴은 크고 바뀌지 않으니, 한 번 받으면 계속 기기에 담아 둔 걸 쓴다.
+  if (new URL(req.url).pathname.includes('/fonts/')) {
+    event.respondWith(
+      (async () => {
+        const cache = await caches.open(FONT_CACHE);
+        const cached = await cache.match(req);
+        if (cached) return cached;
+        const res = await fetch(req);
+        if (res.ok) cache.put(req, res.clone());
+        return res;
+      })(),
+    );
+    return;
+  }
 
   event.respondWith(
     (async () => {

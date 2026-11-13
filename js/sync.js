@@ -179,6 +179,7 @@ const toRemote = (ch) => ({
   done: ch.done,
   createdAt: ch.createdAt,
   updatedAt: ch.updatedAt,
+  pdfId: ch.pdfId ?? null, // 회차 완료 때 올린 PDF 파일 번호(다른 기기에서 다시 완료해도 같은 파일을 고치게)
 });
 
 const sameContent = (a, b) =>

@@ -6,6 +6,7 @@ import * as symbols from './symbols.js';
 import * as drive from './drive.js';
 import * as sync from './sync.js';
 import * as history from './history.js';
+import { makeChapterPdf } from './pdf.js';
 
 const SAVE_DELAY = 300; // 입력이 멈추고 이만큼(ms) 지나면 기기에 저장
 
@@ -66,8 +67,19 @@ function setStatus(text, kind = '') {
 }
 
 // 저장·동기화 상태를 한 줄로 보여준다.
+// 잠깐 보여 주는 알림(예: "회차 완료 · PDF 저장됨"). ms 뒤에 원래 상태 표시로 돌아간다.
+let notice = '';
+let noticeTimer = null;
+function setNotice(text, ms) {
+  notice = text;
+  clearTimeout(noticeTimer);
+  if (text) noticeTimer = setTimeout(() => setNotice('', 0), ms);
+  refreshStatus();
+}
+
 function refreshStatus() {
   if (blockedMsg) return setStatus(blockedMsg, 'warn');
+  if (notice) return setStatus(notice, 'busy');
   if (syncing) return setStatus(`동기화 중… ${syncNote}`, 'busy');
   if (saveFailed) return setStatus('기기 저장 실패!', 'warn');
   if (dirty) return setStatus('저장 중…', 'busy');
@@ -732,6 +744,79 @@ $('#btnSaveNow').addEventListener('click', async (e) => {
   } finally {
     btn.disabled = false;
     refreshStatus();
+  }
+});
+
+// ───────── 회차 완료: PDF로 만들어 드라이브에 저장하고 완료 표시 ─────────
+
+const safeName = (s) => s.replace(/[\\/:*?"<>|]/g, ' ').replace(/\s+/g, ' ').trim();
+
+function downloadBlob(blob, name) {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = name;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+}
+
+$('#btnDone').addEventListener('click', async (e) => {
+  const btn = e.currentTarget;
+  await flush();
+  const ch = currentChapter();
+  if (!ch) return;
+  const no = state.chapters.indexOf(ch) + 1;
+  const work = state.works.find((w) => w.id === state.workId);
+  if (!ch.body.trim()) {
+    await askConfirm('아직 본문이 비어 있어서 완료할 수 없어.', '알겠어');
+    return;
+  }
+  const online = navigator.onLine && drive.wasConnected();
+  const ok = await askConfirm(
+    `${no}화 「${ch.title || '제목 없음'}」(${countLabel(ch.body)}자)를 완료할까?\n\n` +
+      (online ? 'PDF로 만들어서 드라이브의 "집필 앱 › PDF" 폴더에 저장해.' : '지금은 드라이브에 연결돼 있지 않아서, PDF를 이 기기에 내려받아.'),
+    '회차 완료',
+  );
+  if (!ok) return;
+
+  btn.disabled = true;
+  try {
+    setNotice('PDF 만드는 중…', 60000);
+    const { blob, pages } = await makeChapterPdf({
+      workTitle: work.title,
+      no,
+      title: ch.title,
+      body: ch.body,
+      fontFamily: settings.get().bodyFont === 'sans' ? 'Noto Sans KR' : 'Noto Serif KR',
+    });
+    const name = safeName(`${work.title}_${String(no).padStart(3, '0')}화${ch.title ? '_' + ch.title : ''}`) + '.pdf';
+
+    let where = '이 기기에 내려받음';
+    if (online) {
+      if (!drive.isSignedIn()) await reconnect(); // 버튼을 누른 직후라 로그인 창을 띄울 수 있다
+      if (drive.isSignedIn()) {
+        setNotice('PDF 드라이브에 올리는 중…', 60000);
+        const parent = await drive.ensureSubfolder('PDF');
+        ch.pdfId = await drive.uploadFile({ name, parent, mimeType: 'application/pdf', blob, fileId: ch.pdfId });
+        where = '드라이브에 저장됨';
+      } else downloadBlob(blob, name);
+    } else downloadBlob(blob, name);
+
+    ch.done = true;
+    ch.updatedAt = Date.now();
+    ch.dirty = true;
+    await db.put('chapters', ch);
+    await history.add(ch, '회차 완료');
+    renderChapters();
+    markPending();
+    setNotice(`회차 완료 · PDF ${pages}쪽 ${where}`, 6000);
+    pushNow();
+  } catch (err) {
+    console.error(err);
+    sync.log(`회차 완료 실패: ${err.message}`);
+    setNotice('', 0);
+    await askConfirm(`회차 완료를 못 했어.\n${err.message}`, '알겠어');
+  } finally {
+    btn.disabled = false;
   }
 });
 
