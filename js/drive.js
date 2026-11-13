@@ -34,6 +34,8 @@ export const userEmail = () => localStorage.getItem(USER_KEY) ?? '';
 
 // 구글 로그인 도구는 구글 서버에서만 받을 수 있다(인터넷 될 때만 필요).
 let gisPromise;
+// 미리 받아 두면 버튼을 눌렀을 때 로그인 창이 바로 뜬다.
+export const preload = () => loadGis().catch(() => {});
 function loadGis() {
   gisPromise ??= new Promise((resolve, reject) => {
     const s = document.createElement('script');
@@ -77,7 +79,10 @@ export async function signIn() {
   });
 
   await new Promise((resolve, reject) => {
+    pending?.reject(new Error('로그인을 다시 시도했어.')); // 앞선 시도가 남아 있으면 정리
     pending = { resolve, reject };
+    // 로그인 창이 아무 대답 없이 사라진 경우를 대비해 2분 뒤에는 포기한다.
+    setTimeout(() => reject(new Error('로그인이 끝나지 않았어.')), 120000);
     // 처음엔 허락 화면이 나오고, 이미 허락했으면 계정만 고르면 된다.
     tokenClient.requestAccessToken({ prompt: '', login_hint: userEmail() || undefined });
   }).finally(() => (pending = null));

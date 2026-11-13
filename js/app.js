@@ -73,7 +73,9 @@ function refreshStatus() {
   if (dirty) return setStatus('저장 중…', 'busy');
   if (!drive.wasConnected()) return setStatus('기기에 저장됨');
   if (!navigator.onLine) return setStatus('오프라인 · 최신이 아닐 수 있음', 'warn');
-  if (!drive.isSignedIn()) return setStatus('드라이브 연결 필요 · 눌러서 연결', 'action');
+  if (!drive.isSignedIn()) {
+    return reconnectJob ? setStatus('드라이브 다시 연결 중…', 'busy') : setStatus('드라이브 연결 필요 · 아무 데나 누르면 연결', 'action');
+  }
   if (syncError) return setStatus(syncError + ' · 눌러서 다시', 'action');
   if (uploading) return setStatus('드라이브에 올리는 중…', 'busy');
   if (pending) return setStatus('드라이브에 아직 안 올라감', 'warn');
@@ -143,6 +145,49 @@ let pushTimer = null;
 let firstSync = true; // 앱을 연 뒤 첫 동기화(이때만 다른 기기의 마지막 자리로 이동)
 
 const canSync = () => drive.wasConnected() && navigator.onLine && drive.isSignedIn();
+
+// ── 드라이브 자동 재연결 ──
+// 구글 출입증은 1시간짜리라 앱을 다시 열면 대개 만료돼 있다. 설정에 들어가지 않아도 알아서 다시 받는다.
+//  1) 앱을 열자마자 조용히 시도 (브라우저가 이 앱의 팝업을 허용해 둔 경우 바로 성공)
+//  2) 브라우저가 막으면, 앱 안 아무 데나 처음 누르는 순간 다시 시도 (누른 직후에는 팝업이 허용됨)
+const needsReconnect = () => drive.wasConnected() && !drive.isSignedIn() && navigator.onLine;
+let reconnectJob = null;
+let reconnectArmed = false;
+
+// 다시 연결하고 바로 동기화. 이미 진행 중이면 그 결과를 같이 기다린다.
+function reconnect() {
+  reconnectJob ??= (async () => {
+    try {
+      await drive.signIn();
+      syncError = '';
+      await runSync();
+      return true;
+    } catch (err) {
+      sync.log(`자동 재연결 실패: ${err.message}`);
+      return false;
+    } finally {
+      reconnectJob = null;
+      refreshStatus();
+    }
+  })();
+  return reconnectJob;
+}
+
+async function autoReconnect() {
+  if (!needsReconnect()) return;
+  if (await reconnect()) return;
+  if (reconnectArmed || !needsReconnect()) return;
+  reconnectArmed = true;
+  document.addEventListener(
+    'click',
+    function onFirstClick() {
+      document.removeEventListener('click', onFirstClick, true);
+      reconnectArmed = false;
+      if (needsReconnect()) reconnect();
+    },
+    true,
+  );
+}
 
 function markPending() {
   pending = drive.wasConnected();
@@ -657,11 +702,13 @@ document.addEventListener('visibilitychange', () => {
     saveCursor();
     if (pending) pushNow(); // 나가는 김에 드라이브에도 올려 본다(pushNow가 기기 저장도 같이 함)
     else flush();
+  } else if (needsReconnect()) {
+    autoReconnect();
   } else {
     runSync(); // 다른 앱 보다가 돌아오면 먼저 드라이브 확인
   }
 });
-window.addEventListener('online', runSync);
+window.addEventListener('online', () => (needsReconnect() ? autoReconnect() : runSync()));
 window.addEventListener('offline', refreshStatus);
 
 // 임시저장: 지금 바로 드라이브에 올린다.
@@ -674,7 +721,9 @@ $('#btnSaveNow').addEventListener('click', async (e) => {
     lastSnapAt = Date.now();
     if (!drive.wasConnected() || !drive.isSignedIn()) {
       if (!navigator.onLine) return refreshStatus();
-      await drive.signIn(); // 버튼을 누른 직후라 로그인 창을 띄울 수 있다
+      // 버튼을 누른 직후라 로그인 창을 띄울 수 있다
+      if (drive.wasConnected()) await reconnect();
+      else await drive.signIn();
     }
     const ok = firstSync ? (await runSync()) && (await pushNow()) : await pushNow();
     savedNow = ok;
@@ -690,7 +739,10 @@ $('#btnSaveNow').addEventListener('click', async (e) => {
 el.saveStatus.addEventListener('click', async () => {
   if (!el.saveStatus.classList.contains('action')) return;
   try {
-    if (!drive.isSignedIn()) await drive.signIn();
+    if (!drive.isSignedIn()) {
+      await reconnect();
+      return;
+    }
     syncError = '';
     await runSync();
   } catch (err) {
@@ -728,7 +780,9 @@ async function init() {
   if (drive.wasConnected()) {
     pending = await sync.hasPending();
     refreshStatus();
-    await runSync();
+    drive.preload();
+    if (needsReconnect()) await autoReconnect();
+    else await runSync();
   }
 }
 
