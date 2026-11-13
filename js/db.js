@@ -63,5 +63,8 @@ export const del = (store, id) => run(store, 'readwrite', (s) => s.delete(id));
 export const getChaptersOf = (workId) =>
   run('chapters', 'readonly', (s) => s.index('workId').getAll(workId));
 
-export const getMeta = (key) => run('meta', 'readonly', (s) => s.get(key));
+export const getHistoryOf = (chapterId) =>
+  run('history', 'readonly', (s) => s.index('chapterId').getAll(chapterId));
+
+export const getMeta =(key) => run('meta', 'readonly', (s) => s.get(key));
 export const setMeta = (key, value) => run('meta', 'readwrite', (s) => s.put(value, key));

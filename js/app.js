@@ -5,6 +5,7 @@ import { askText, askConfirm, askChoice } from './dialogs.js';
 import * as symbols from './symbols.js';
 import * as drive from './drive.js';
 import * as sync from './sync.js';
+import * as history from './history.js';
 
 const SAVE_DELAY = 300; // 입력이 멈추고 이만큼(ms) 지나면 기기에 저장
 
@@ -104,6 +105,7 @@ async function flush() {
     saveFailed = false;
     updateListItem(ch);
     markPending();
+    autoSnapshot(ch).catch(console.error);
   } catch (err) {
     dirty = true;
     saveFailed = true;
@@ -265,6 +267,7 @@ async function reloadFromDb(res) {
   }
   // 지금 보던 회차가 드라이브 버전으로 바뀌었으면 화면도 바꾼다.
   if (ch.body !== el.editor.value) {
+    snapBase = { ...ch };
     el.editor.value = ch.body;
     const pos = Math.min(cursor, ch.body.length);
     el.editor.setSelectionRange(pos, pos);
@@ -293,17 +296,46 @@ sync.init({
     return true;
   },
   // 두 기기에서 같은 회차를 따로 고쳤을 때: 작가가 고른다.
-  async resolveConflict(mine, theirs) {
-    const useRemote = await askChoice(
-      `「${mine.title || theirs.title || '제목 없음'}」 회차가 이 기기와 다른 기기에서 따로 고쳐졌어.\n\n` +
-        `이 기기: ${fmt(mainCount(mine.body))}자 · ${fmtTime(mine.updatedAt)}\n` +
-        `드라이브: ${fmt(mainCount(theirs.body))}자 · ${fmtTime(theirs.updatedAt)}\n\n` +
-        `어느 쪽을 쓸까? 안 고른 쪽은 되돌리기 기록에 남아.`,
-      '이 기기 버전',
-      '드라이브 버전',
-    );
-    return useRemote ? 'remote' : 'local';
-  },
+  resolveConflict: (mine, theirs) => history.askConflict(mine, theirs, countLabel),
+});
+
+const countLabel = (text) => fmt(mainCount(text));
+
+// ───────── 되돌리기 기록 ─────────
+
+const SNAP_EVERY = 10 * 60 * 1000; // 쓰는 동안 이 간격으로 자동 기록
+let snapBase = null; // 회차를 열었을 때의 모습(고치기 시작하면 "편집 시작 전"으로 남긴다)
+let lastSnapAt = 0;
+
+async function autoSnapshot(ch) {
+  if (snapBase && snapBase.id === ch.id) {
+    const base = snapBase;
+    snapBase = null;
+    lastSnapAt = Date.now();
+    await history.add(base, '편집 시작 전');
+  } else if (Date.now() - lastSnapAt > SNAP_EVERY) {
+    lastSnapAt = Date.now();
+    await history.add(ch, '자동 기록');
+  }
+}
+
+$('#btnHistory').addEventListener('click', async () => {
+  await flush();
+  const ch = currentChapter();
+  if (!ch) return;
+  history.open({
+    chapter: ch,
+    count: countLabel,
+    async onRestore(item) {
+      await flush();
+      await history.add(currentChapter(), '되돌리기 직전'); // 되돌린 걸 다시 되돌릴 수 있게
+      el.editor.value = item.body;
+      el.chapTitle.value = item.title;
+      el.editor.setSelectionRange(item.body.length, item.body.length);
+      updateCounts();
+      scheduleSave();
+    },
+  });
 });
 
 function scheduleCursorSave() {
@@ -411,6 +443,7 @@ async function openChapter(id, restore) {
   await saveCursor();
   state.chapterId = id;
   const ch = currentChapter();
+  snapBase = { ...ch };
   el.editor.value = ch.body;
   el.chapTitle.value = ch.title;
   el.chapNum.textContent = state.chapters.indexOf(ch) + 1 + '화';
@@ -637,6 +670,8 @@ $('#btnSaveNow').addEventListener('click', async (e) => {
   btn.disabled = true;
   try {
     await flush();
+    await history.add(currentChapter(), '임시저장');
+    lastSnapAt = Date.now();
     if (!drive.wasConnected() || !drive.isSignedIn()) {
       if (!navigator.onLine) return refreshStatus();
       await drive.signIn(); // 버튼을 누른 직후라 로그인 창을 띄울 수 있다

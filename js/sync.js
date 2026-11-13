@@ -14,6 +14,7 @@
 
 import * as db from './db.js';
 import * as drive from './drive.js';
+import * as history from './history.js';
 
 const UPLOAD = 'https://www.googleapis.com/upload/drive/v3';
 const CH_PREFIX = 'ch-';
@@ -217,18 +218,7 @@ async function storeRemoteChapter(data, file) {
   await db.put('chapters', { ...data, remoteId: file.id, remoteVer: file.md5Checksum, dirty: false });
 }
 
-export async function addHistory(ch, reason) {
-  if (!ch.body && !ch.title) return;
-  await db.put('history', {
-    id: uid(),
-    chapterId: ch.id,
-    workId: ch.workId,
-    title: ch.title,
-    body: ch.body,
-    at: Date.now(),
-    reason,
-  });
-}
+const addHistory = (ch, reason) => history.add(ch, reason);
 
 // ───────── 작품 목록 ─────────
 
@@ -326,6 +316,7 @@ export async function syncAll() {
 
     const data = await download(file.id);
     if (!mine.dirty) {
+      if (!sameContent(mine, data)) await addHistory(mine, '다른 기기 버전을 받기 전');
       await storeRemoteChapter(data, file);
       result.pulled++;
     } else if (sameContent(mine, data)) {

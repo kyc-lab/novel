@@ -21,6 +21,7 @@
       </div>
       <button id="saveStatus" class="save-status" type="button"></button>
       <button id="btnSaveNow" class="text-btn" type="button" title="지금 바로 드라이브에 올리기">임시저장</button>
+      <button id="btnHistory" class="icon-btn" aria-label="되돌리기 기록" title="되돌리기 기록">↺</button>
       <button id="btnFocus" class="icon-btn" aria-label="집중 모드" title="집중 모드">⛶</button>
       <button id="btnSettings" class="icon-btn" aria-label="설정" title="설정">⚙</button>
     </header>
@@ -65,6 +66,40 @@
   <div id="overlayCount" class="overlay-count" aria-hidden="true"></div>
   <!-- 집중 모드에서만 보이는 나가기 버튼 -->
   <button id="btnFocusExit" class="focus-exit" title="집중 모드 끝내기 (Esc)">집중 모드 끝내기</button>
+
+  <!-- 되돌리기 기록 창 -->
+  <dialog id="historyDlg" class="sheet wide">
+    <div class="sheet-head">
+      <h2>되돌리기 기록 <small>이 기기에 저장된 이전 버전</small></h2>
+      <button type="button" class="icon-btn" data-close aria-label="닫기">✕</button>
+    </div>
+    <div class="hist-body">
+      <ul id="histList" class="hist-list"></ul>
+      <div class="hist-view">
+        <p id="histInfo" class="hint"></p>
+        <pre id="histText" class="doc"></pre>
+        <button type="button" id="histRestore" class="mini-btn primary">이 버전으로 되돌리기</button>
+      </div>
+    </div>
+  </dialog>
+
+  <!-- 충돌 창: 두 버전 나란히 -->
+  <dialog id="conflictDlg" class="sheet wide">
+    <div class="sheet-head"><h2 id="cfTitle"></h2></div>
+    <p class="hint pad">같은 회차를 두 기기에서 따로 고쳤어. 노랗게 칠한 곳이 서로 다른 부분이야. 안 고른 쪽은 되돌리기 기록에 남아.</p>
+    <div class="cf-cols">
+      <section>
+        <h3>이 기기 <small id="cfLocalInfo"></small></h3>
+        <pre id="cfLocal" class="doc"></pre>
+        <button type="button" id="cfUseLocal" class="mini-btn primary">이 기기 버전 쓰기</button>
+      </section>
+      <section>
+        <h3>드라이브(다른 기기) <small id="cfRemoteInfo"></small></h3>
+        <pre id="cfRemote" class="doc"></pre>
+        <button type="button" id="cfUseRemote" class="mini-btn primary">드라이브 버전 쓰기</button>
+      </section>
+    </div>
+  </dialog>
 
   <!-- 물어보기 창 (이름 입력, 삭제 확인) -->
   <dialog id="askDlg" class="sheet ask">

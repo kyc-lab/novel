@@ -442,6 +442,67 @@ body.focus .focus-exit { display: block; }
 }
 .chip.on { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
 
+/* ── 되돌리기 기록 · 충돌 창 ── */
+.sheet.wide { width: min(960px, 100vw); max-height: min(90dvh, 820px); }
+.sheet.wide[open] { display: flex; flex-direction: column; }
+.sheet-head h2 small { color: var(--muted); font-weight: 400; font-size: 12px; margin-left: 8px; }
+.hint.pad { margin: 0; padding: 10px 18px 0; }
+.doc {
+  flex: 1;
+  min-height: 0;
+  margin: 0;
+  overflow-y: auto;
+  padding: 12px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font-family: var(--body-font);
+  font-size: 15px;
+  line-height: 1.8;
+  white-space: pre-wrap;
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+.doc mark { background: #E0A45855; color: inherit; border-radius: 3px; padding: 1px 0; }
+.doc mark.empty { color: var(--muted); font-size: 12px; }
+.mini-btn.primary { background: var(--accent); border-color: var(--accent); color: #17181B; font-weight: 700; }
+
+.hist-body { display: flex; min-height: 0; flex: 1; }
+.hist-list {
+  list-style: none; margin: 0; padding: 6px;
+  width: 250px; flex: none;
+  overflow-y: auto;
+  border-right: 1px solid var(--line);
+}
+.hist-list button {
+  display: flex; flex-direction: column; gap: 2px;
+  width: 100%; text-align: left;
+  padding: 8px 10px;
+  border-radius: 8px;
+}
+.hist-list button:hover { background: var(--panel-2); }
+.hist-list li.on button { background: var(--panel-2); box-shadow: inset 3px 0 0 var(--accent); }
+.hist-list .why { color: var(--muted); font-size: 12px; }
+.hist-view { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 10px; padding: 12px 16px 16px; }
+.hist-view .hint { margin: 0; }
+.hist-view .mini-btn { align-self: flex-end; }
+
+.cf-cols { display: flex; gap: 12px; padding: 12px 16px 16px; min-height: 0; flex: 1; }
+.cf-cols section { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 8px; }
+.cf-cols h3 { margin: 0; font-size: 14px; }
+.cf-cols h3 small { color: var(--muted); font-weight: 400; margin-left: 6px; }
+.cf-cols .doc { min-height: 160px; }
+
+@media (max-width: 800px) {
+  #btnFocus { display: none; } /* 좁은 화면은 자리가 모자라서 집중 모드 버튼을 뺀다 */
+  .hist-body { flex-direction: column; }
+  .hist-list { width: auto; max-height: 28dvh; border-right: 0; border-bottom: 1px solid var(--line); }
+  .hist-view { min-height: 40dvh; }
+  .cf-cols { flex-direction: column; overflow-y: auto; }
+  .cf-cols .doc { max-height: 26dvh; flex: none; }
+}
+
 .log-box { margin-top: 8px; font-size: 13px; color: var(--muted); }
 .log-box summary { cursor: pointer; padding: 6px 0; }
 .log-box pre {
