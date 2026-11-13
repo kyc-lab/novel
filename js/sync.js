@@ -38,7 +38,10 @@ export function log(msg) {
   } catch {
     // 기록을 못 남겨도 동기화는 계속한다
   }
+  logListeners.forEach((fn) => fn());
 }
+const logListeners = [];
+export const onLog = (fn) => logListeners.push(fn);
 export const getLog = () => logLines.join('\n');
 const label = (ch) => `「${ch.title || '제목 없음'}」(${[...(ch.body ?? '')].length}자)`;
 

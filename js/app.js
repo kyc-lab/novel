@@ -774,14 +774,18 @@ drive.onChange(renderDrive);
 renderDrive();
 
 // 동기화 기록: 펼칠 때 최신 내용으로 채운다.
-$('#syncLogBox').addEventListener('toggle', (e) => {
-  if (!e.currentTarget.open) return;
+function renderSyncLog() {
+  if (!$('#syncLogBox').open) return;
   const pre = $('#syncLog');
   pre.textContent = sync.getLog() || '아직 기록이 없어.';
   pre.scrollTop = pre.scrollHeight;
-});
+}
+$('#syncLogBox').addEventListener('toggle', renderSyncLog);
+sync.onLog(renderSyncLog); // 펼쳐 둔 채로 있어도 새 기록이 바로 보이게
+el.btnSettings.addEventListener('click', renderSyncLog);
 $('#syncLogCopy').addEventListener('click', async (e) => {
   const btn = e.currentTarget;
+  renderSyncLog();
   try {
     await navigator.clipboard.writeText(sync.getLog());
     btn.textContent = '복사됨';
