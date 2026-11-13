@@ -795,7 +795,9 @@ $('#btnDone').addEventListener('click', async (e) => {
   const online = navigator.onLine && drive.wasConnected();
   const ok = await askConfirm(
     `${no}화 「${ch.title || '제목 없음'}」(${countLabel(ch.body)}자)를 완료할까?\n\n` +
-      (online ? 'PDF로 만들어서 드라이브의 "집필 앱 › PDF" 폴더에 저장해.' : '지금은 드라이브에 연결돼 있지 않아서, PDF를 이 기기에 내려받아.'),
+      (online
+        ? `PDF와 원문(txt)을 드라이브의 "집필 앱 › 완료 회차 › ${safeName(work.title)}" 폴더에 저장해.`
+        : '지금은 드라이브에 연결돼 있지 않아서, PDF와 원문(txt)을 이 기기에 내려받아.'),
     '회차 완료',
   );
   if (!ok) return;
@@ -810,18 +812,33 @@ $('#btnDone').addEventListener('click', async (e) => {
       body: ch.body,
       fontFamily: settings.get().bodyFont === 'sans' ? 'Noto Sans KR' : 'Noto Serif KR',
     });
-    const name = safeName(`${work.title}_${String(no).padStart(3, '0')}화${ch.title ? '_' + ch.title : ''}`) + '.pdf';
+    // PDF와 원문(txt)은 같은 이름으로, 작품별 폴더에 같이 저장한다.
+    const name = safeName(`${work.title}_${String(no).padStart(3, '0')}화${ch.title ? '_' + ch.title : ''}`);
+    // 메모장에서도 한글이 안 깨지게 맨 앞에 표식(BOM)을 붙인다.
+    const txt = new Blob(['﻿', `${work.title}\n${no}화${ch.title ? ' ' + ch.title : ''}\n\n${ch.body}\n`], { type: 'text/plain' });
+    const saveLocal = () => {
+      downloadBlob(blob, name + '.pdf');
+      downloadBlob(txt, name + '.txt');
+    };
 
     let where = '이 기기에 내려받음';
     if (online) {
       if (!drive.isSignedIn()) await reconnect(); // 버튼을 누른 직후라 로그인 창을 띄울 수 있다
       if (drive.isSignedIn()) {
-        setNotice('PDF 드라이브에 올리는 중…', 60000);
-        const parent = await drive.ensureSubfolder('PDF');
-        ch.pdfId = await drive.uploadFile({ name, parent, mimeType: 'application/pdf', blob, fileId: ch.pdfId });
+        setNotice('드라이브에 올리는 중…', 60000);
+        const root = await drive.ensureSubfolder('완료 회차');
+        const folder = await drive.ensureFolderIn(root, safeName(work.title), work.folderId);
+        if (folder !== work.folderId) {
+          work.folderId = folder;
+          work.updatedAt = Date.now();
+          await db.put('works', work);
+          await sync.markWorksDirty();
+        }
+        ch.pdfId = await drive.uploadFile({ name: name + '.pdf', parent: folder, mimeType: 'application/pdf', blob, fileId: ch.pdfId });
+        ch.txtId = await drive.uploadFile({ name: name + '.txt', parent: folder, mimeType: 'text/plain', blob: txt, fileId: ch.txtId });
         where = '드라이브에 저장됨';
-      } else downloadBlob(blob, name);
-    } else downloadBlob(blob, name);
+      } else saveLocal();
+    } else saveLocal();
 
     ch.done = true;
     ch.updatedAt = Date.now();
@@ -830,7 +847,7 @@ $('#btnDone').addEventListener('click', async (e) => {
     await history.add(ch, '회차 완료');
     renderChapters();
     markPending();
-    setNotice(`회차 완료 · PDF ${pages}쪽 ${where}`, 6000);
+    setNotice(`회차 완료 · PDF ${pages}쪽 + 원문 ${where}`, 6000);
     pushNow();
   } catch (err) {
     console.error(err);

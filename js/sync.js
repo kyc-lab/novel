@@ -180,6 +180,7 @@ const toRemote = (ch) => ({
   createdAt: ch.createdAt,
   updatedAt: ch.updatedAt,
   pdfId: ch.pdfId ?? null, // 회차 완료 때 올린 PDF 파일 번호(다른 기기에서 다시 완료해도 같은 파일을 고치게)
+  txtId: ch.txtId ?? null, // 같이 올린 원문(txt) 파일 번호
 });
 
 const sameContent = (a, b) =>
@@ -228,7 +229,13 @@ const addHistory = (ch, reason) => history.add(ch, reason);
 
 const worksPayload = (works, book) => ({
   works: works
-    .map((w) => ({ id: w.id, title: w.title, createdAt: w.createdAt, updatedAt: w.updatedAt ?? w.createdAt }))
+    .map((w) => ({
+      id: w.id,
+      title: w.title,
+      createdAt: w.createdAt,
+      updatedAt: w.updatedAt ?? w.createdAt,
+      folderId: w.folderId ?? null, // 완료 회차(PDF·txt)를 모아 두는 이 작품의 드라이브 폴더
+    }))
     .sort((a, b) => (a.id < b.id ? -1 : 1)),
   deletedWorks: book.deletedWorks,
   deletedChapters: book.deletedChapters,

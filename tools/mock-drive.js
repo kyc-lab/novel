@@ -38,8 +38,12 @@ export function install() {
     if (!id && method === 'GET') {
       const q = url.searchParams.get('q') ?? '';
       const wantFolder = q.includes('google-apps.folder');
+      const wantName = q.match(/name = '((?:[^'\\]|\\.)*)'/)?.[1]?.replace(/\\'/g, "'");
+      const wantParent = q.match(/'([^']+)' in parents/)?.[1];
       const files = Object.values(d.files)
-        .filter((f) => !f.trashed && !!f.folder === wantFolder)
+        .filter((f) => !f.trashed && (!!f.folder === wantFolder || (!wantFolder && wantParent && f.folder)))
+        .filter((f) => wantName === undefined || f.name === wantName)
+        .filter((f) => !wantParent || (f.parents ?? []).includes(wantParent))
         .sort((a, b) => a.seq - b.seq)
         .map((f) => ({ id: f.id, name: f.name, md5Checksum: f.md5, modifiedTime: f.modified }));
       return json({ files });
@@ -52,15 +56,15 @@ export function install() {
         // PDF 같은 파일: 내용은 담지 않고 이름과 크기만 기억한다.
         const head = await init.body.slice(0, 2000).text();
         const meta = JSON.parse(head.match(/\{.*\}/)[0]);
-        d.files[fid] = { id: fid, seq: d.seq, name: meta.name, binary: true, size: init.body.size, content: '{}', md5: 'bin' + init.body.size, modified: Date.now() };
+        d.files[fid] = { id: fid, seq: d.seq, name: meta.name, parents: meta.parents ?? [], binary: true, size: init.body.size, content: '{}', md5: 'bin' + init.body.size, modified: Date.now() };
       } else if (upload) {
         const boundary = init.headers['Content-Type'].split('boundary=')[1];
         const parts = init.body.split('--' + boundary).slice(1, -1).map((p) => p.split('\r\n\r\n').slice(1).join('\r\n\r\n').replace(/\r\n$/, ''));
         const meta = JSON.parse(parts[0]);
-        d.files[fid] = { id: fid, seq: d.seq, name: meta.name, content: parts[1], md5: hash(parts[1]), modified: Date.now() };
+        d.files[fid] = { id: fid, seq: d.seq, name: meta.name, parents: meta.parents ?? [], content: parts[1], md5: hash(parts[1]), modified: Date.now() };
       } else {
         const meta = JSON.parse(init.body);
-        d.files[fid] = { id: fid, seq: d.seq, name: meta.name, folder: true };
+        d.files[fid] = { id: fid, seq: d.seq, name: meta.name, parents: meta.parents ?? [], folder: true };
       }
       save(d);
       return json({ id: fid, md5Checksum: d.files[fid].md5 });
@@ -71,7 +75,7 @@ export function install() {
 
     if (method === 'GET') {
       if (url.searchParams.get('alt') === 'media') return new Response(f.content, { status: 200 });
-      return json({ id: f.id, md5Checksum: f.md5, trashed: !!f.trashed });
+      return json({ id: f.id, name: f.name, md5Checksum: f.md5, trashed: !!f.trashed, parents: f.parents ?? [] });
     }
     if (method === 'PATCH') {
       if (upload && init.body instanceof Blob) {
@@ -84,6 +88,9 @@ export function install() {
         f.modified = Date.now();
       } else {
         Object.assign(f, JSON.parse(init.body));
+        const add = url.searchParams.get('addParents');
+        const remove = (url.searchParams.get('removeParents') ?? '').split(',');
+        if (add) f.parents = [...(f.parents ?? []).filter((p) => !remove.includes(p)), add];
       }
       save(d);
       return json({ id: f.id, md5Checksum: f.md5 });
@@ -108,7 +115,8 @@ export function remoteCreate(name, data) {
   const d = load();
   d.seq++;
   const content = JSON.stringify(data);
-  d.files['f' + d.seq] = { id: 'f' + d.seq, seq: d.seq, name, content, md5: hash(content), modified: Date.now() };
+  const appFolder = Object.values(d.files).find((f) => f.folder && !(f.parents ?? []).length);
+  d.files['f' + d.seq] = { id: 'f' + d.seq, seq: d.seq, name, parents: appFolder ? [appFolder.id] : [], content, md5: hash(content), modified: Date.now() };
   save(d);
 }
 

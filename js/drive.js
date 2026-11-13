@@ -166,11 +166,53 @@ export async function ensureSubfolder(name) {
   return id;
 }
 
-// 파일(PDF 등)을 올린다. fileId가 있고 그 파일이 아직 있으면 내용만 바꾼다. 올라간 파일의 ID를 돌려준다.
+const FOLDER_MIME = 'application/vnd.google-apps.folder';
+
+// 이름을 바꾸고, 다른 폴더에 있으면 parent 폴더로 옮긴다.
+async function renameAndMove(id, name, parent, currentParents = []) {
+  const move =
+    parent && !currentParents.includes(parent)
+      ? `&addParents=${parent}` + (currentParents.length ? `&removeParents=${currentParents.join(',')}` : '')
+      : '';
+  await call(`/files/${id}?fields=id${move}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name }),
+  });
+}
+
+// parent 폴더 안의 name 폴더 ID. knownId(전에 쓰던 폴더)가 살아 있으면 그걸 쓰고 이름만 맞춘다(작품 이름을 바꾼 경우).
+export async function ensureFolderIn(parent, name, knownId) {
+  if (knownId) {
+    try {
+      const meta = await call(`/files/${knownId}?fields=name,trashed,parents`);
+      if (!meta.trashed) {
+        if (meta.name !== name) await renameAndMove(knownId, name, parent, meta.parents ?? []);
+        return knownId;
+      }
+    } catch (err) {
+      if (err.status !== 404) throw err;
+    }
+  }
+  const q = encodeURIComponent(
+    `name = '${name.replace(/'/g, "\\'")}' and '${parent}' in parents and mimeType = '${FOLDER_MIME}' and trashed = false`,
+  );
+  const found = await call(`/files?q=${q}&fields=files(id)&orderBy=createdTime`);
+  if (found.files[0]) return found.files[0].id;
+  const created = await call('/files?fields=id', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name, parents: [parent], mimeType: FOLDER_MIME }),
+  });
+  return created.id;
+}
+
+// 파일(PDF·txt 등)을 parent 폴더에 올린다. fileId가 있고 그 파일이 아직 있으면 내용을 바꾸고,
+// 이름이 달라졌거나 다른 폴더에 있으면 맞춰 준다. 올라간 파일의 ID를 돌려준다.
 export async function uploadFile({ name, parent, mimeType, blob, fileId }) {
   if (fileId) {
     try {
-      const meta = await call(`/files/${fileId}?fields=trashed`);
+      const meta = await call(`/files/${fileId}?fields=name,trashed,parents`);
       if (!meta.trashed) {
         await call(`/files/${fileId}?uploadType=media&fields=id`, {
           base: UPLOAD,
@@ -178,12 +220,8 @@ export async function uploadFile({ name, parent, mimeType, blob, fileId }) {
           headers: { 'Content-Type': mimeType },
           body: blob,
         });
-        // 회차 제목이 바뀌었을 수 있으니 파일 이름도 맞춘다.
-        await call(`/files/${fileId}?fields=id`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ name }),
-        });
+        const parents = meta.parents ?? [];
+        if (meta.name !== name || !parents.includes(parent)) await renameAndMove(fileId, name, parent, parents);
         return fileId;
       }
     } catch (err) {
