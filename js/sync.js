@@ -19,7 +19,31 @@ const UPLOAD = 'https://www.googleapis.com/upload/drive/v3';
 const CH_PREFIX = 'ch-';
 const uid = () => crypto.randomUUID();
 
+// ───────── 동기화 기록 (문제가 생겼을 때 무슨 일이 있었는지 보기 위해) ─────────
+
+const LOG_KEY = 'syncLog';
+let logLines = [];
+try {
+  logLines = JSON.parse(localStorage.getItem(LOG_KEY)) ?? [];
+} catch {
+  logLines = [];
+}
+export function log(msg) {
+  const t = new Date().toLocaleTimeString('en-GB'); // 22:09:01 모양
+  logLines.push(`${t} ${msg}`);
+  if (logLines.length > 300) logLines = logLines.slice(-300);
+  try {
+    localStorage.setItem(LOG_KEY, JSON.stringify(logLines));
+  } catch {
+    // 기록을 못 남겨도 동기화는 계속한다
+  }
+}
+export const getLog = () => logLines.join('\n');
+const label = (ch) => `「${ch.title || '제목 없음'}」(${[...(ch.body ?? '')].length}자)`;
+
 let hooks = {
+  // 진행 상황을 화면에 알린다.
+  progress: () => {},
   // 앱이 지금 들고 있는 회차면 앱이 직접 고치고 true를 돌려준다(기기 저장과 엇갈리지 않게).
   patchChapter: async () => false,
   // 충돌: 'local'(이 기기 버전) 또는 'remote'(드라이브 버전)를 돌려준다.
@@ -171,11 +195,15 @@ async function pushChapter(ch, folder) {
   let res;
   if (ch.remoteId) {
     const ver = await currentVer(ch.remoteId);
-    if (ver && ver !== ch.remoteVer) return 'conflict';
+    if (ver && ver !== ch.remoteVer) {
+      log(`올리려는데 드라이브 쪽이 먼저 바뀜 ${label(ch)}`);
+      return 'conflict';
+    }
     res = ver ? await updateFile(ch.remoteId, data) : await createFile(folder, `${CH_PREFIX}${ch.id}.json`, data);
   } else {
     res = await createFile(folder, `${CH_PREFIX}${ch.id}.json`, data);
   }
+  log(`올림 ${label(ch)}`);
   await patchChapter(ch.id, (rec) => {
     rec.remoteId = res.id;
     rec.remoteVer = res.md5Checksum;
@@ -185,6 +213,7 @@ async function pushChapter(ch, folder) {
 }
 
 async function storeRemoteChapter(data, file) {
+  log(`받음 ${label(data)}`);
   await db.put('chapters', { ...data, remoteId: file.id, remoteVer: file.md5Checksum, dirty: false });
 }
 
@@ -229,10 +258,16 @@ async function dropPristineWorks() {
 // 부르는 쪽에서 원고 입력을 잠가 두고 부른다.
 
 export async function syncAll() {
+  const started = Date.now();
+  log('── 전체 동기화 시작');
+  hooks.progress('드라이브 확인');
   const folder = await drive.ensureFolder();
   const remote = await listRemote(folder);
   const book = await getBook();
   const result = { pulled: 0, pushed: 0, conflicts: 0, remoteState: null };
+  const total = [...remote.keys()].filter((n) => n.startsWith(CH_PREFIX)).length;
+  log(`드라이브 파일 ${remote.size}개 (회차 ${total}개)`);
+  let step = 0;
 
   // 1) 작품 목록 합치기
   const worksFile = remote.get('works.json');
@@ -266,6 +301,7 @@ export async function syncAll() {
     if (!name.startsWith(CH_PREFIX)) continue;
     const id = name.slice(CH_PREFIX.length, -'.json'.length);
     seen.add(id);
+    hooks.progress(`회차 확인 ${++step}/${total}`);
     if (book.deletedChapters[id]) {
       await trash(file.id);
       continue;
@@ -297,7 +333,10 @@ export async function syncAll() {
     } else {
       // 둘 다 바뀜 → 작가가 고른다. 안 고른 쪽은 되돌리기 기록에 남긴다.
       result.conflicts++;
+      log(`충돌 ${label(mine)} ↔ 드라이브 ${label(data)} — 작가 선택 대기`);
+      hooks.progress('어느 버전을 쓸지 골라줘');
       const choice = await hooks.resolveConflict(mine, data);
+      log(`선택: ${choice === 'remote' ? '드라이브 버전' : '이 기기 버전'}`);
       if (choice === 'remote') {
         await addHistory(mine, '충돌 · 이 기기 버전');
         await storeRemoteChapter(data, file);
@@ -313,6 +352,7 @@ export async function syncAll() {
   // 드라이브에 파일이 없는 회차 → 새로 올린다(처음 올리는 회차, 또는 드라이브에서 누가 파일을 지운 경우)
   for (const [id, mine] of local) {
     if (seen.has(id)) continue;
+    hooks.progress('새 회차 올리는 중');
     if ((await pushChapter({ ...mine, remoteId: null, remoteVer: null }, folder)) === 'ok') result.pushed++;
   }
 
@@ -338,6 +378,7 @@ export async function syncAll() {
 
   book.everSynced = true;
   await setBook(book);
+  log(`── 끝: 받음 ${result.pulled}, 올림 ${result.pushed}, 충돌 ${result.conflicts}, ${((Date.now() - started) / 1000).toFixed(1)}초`);
   return result;
 }
 

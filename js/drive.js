@@ -102,11 +102,22 @@ export function signOut() {
 export async function call(path, { method = 'GET', body, headers = {}, raw = false, base = API } = {}) {
   const token = readToken();
   if (!token) throw new NeedSignIn('드라이브 연결이 필요해.');
-  const res = await fetch(base + path, {
-    method,
-    headers: { Authorization: 'Bearer ' + token, ...headers },
-    body,
-  });
+  // 응답이 20초 넘게 안 오면 끊고 실패로 처리한다(끝없이 기다리며 멈추지 않게).
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 20000);
+  let res;
+  try {
+    res = await fetch(base + path, {
+      method,
+      headers: { Authorization: 'Bearer ' + token, ...headers },
+      body,
+      signal: ctrl.signal,
+    });
+  } catch (err) {
+    throw new Error(ctrl.signal.aborted ? '드라이브 응답이 너무 늦어(20초 초과)' : '드라이브에 연결 못 함: ' + err.message);
+  } finally {
+    clearTimeout(timer);
+  }
   if (res.status === 401) {
     localStorage.removeItem(TOKEN_KEY);
     notify();

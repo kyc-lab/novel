@@ -65,7 +65,7 @@ function setStatus(text, kind = '') {
 
 // 저장·동기화 상태를 한 줄로 보여준다.
 function refreshStatus() {
-  if (syncing) return setStatus('동기화 중…', 'busy');
+  if (syncing) return setStatus(`동기화 중… ${syncNote}`, 'busy');
   if (saveFailed) return setStatus('기기 저장 실패!', 'warn');
   if (dirty) return setStatus('저장 중…', 'busy');
   if (!drive.wasConnected()) return setStatus('기기에 저장됨');
@@ -129,6 +129,7 @@ let userMoved = false;
 
 const PUSH_DELAY = 20000; // 기기에 저장하고 이만큼(ms) 지나면 드라이브에도 올린다
 let syncing = false; // 전체 동기화 중(원고 잠금)
+let syncNote = ''; // 동기화가 지금 뭘 하는 중인지
 let uploading = false;
 let pending = false; // 드라이브에 아직 안 올라간 게 있음
 let savedNow = false; // 방금 임시저장을 눌러서 올림
@@ -172,6 +173,7 @@ async function pushNow() {
     syncError = '';
     if (!needFull) pending = await sync.hasPending();
   } catch (err) {
+    sync.log(`올리기 실패: ${err.message}`);
     if (!(err instanceof drive.NeedSignIn)) {
       syncError = '드라이브 올리기 실패';
       console.error(err);
@@ -192,6 +194,7 @@ async function runSync() {
     return false;
   }
   syncing = true;
+  syncNote = '';
   savedNow = false;
   document.body.classList.add('syncing');
   el.editor.readOnly = true;
@@ -202,6 +205,8 @@ async function runSync() {
     await flush();
     await saveCursor();
     const res = await sync.syncAll();
+    syncNote = '화면 맞추는 중';
+    refreshStatus();
     await reloadFromDb(res);
     await sync.pushDirty(firstSync ? null : currentPosition());
     pending = await sync.hasPending();
@@ -209,6 +214,7 @@ async function runSync() {
     firstSync = false;
     ok = true;
   } catch (err) {
+    sync.log(`실패: ${err.message}`);
     if (!(err instanceof drive.NeedSignIn)) {
       syncError = '동기화 실패';
       console.error(err);
@@ -272,6 +278,10 @@ const fmtTime = (ts) =>
   new Date(ts).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 
 sync.init({
+  progress(text) {
+    syncNote = text;
+    refreshStatus();
+  },
   // 지금 화면에 올라와 있는 회차는 앱이 직접 고쳐서 저장한다.
   async patchChapter(id, fn) {
     const ch = state.chapters.find((c) => c.id === id);
@@ -714,6 +724,24 @@ driveBtn.addEventListener('click', async () => {
 });
 drive.onChange(renderDrive);
 renderDrive();
+
+// 동기화 기록: 펼칠 때 최신 내용으로 채운다.
+$('#syncLogBox').addEventListener('toggle', (e) => {
+  if (!e.currentTarget.open) return;
+  const pre = $('#syncLog');
+  pre.textContent = sync.getLog() || '아직 기록이 없어.';
+  pre.scrollTop = pre.scrollHeight;
+});
+$('#syncLogCopy').addEventListener('click', async (e) => {
+  const btn = e.currentTarget;
+  try {
+    await navigator.clipboard.writeText(sync.getLog());
+    btn.textContent = '복사됨';
+  } catch {
+    btn.textContent = '복사 실패 — 직접 드래그해서 복사해줘';
+  }
+  setTimeout(() => (btn.textContent = '기록 복사'), 2000);
+});
 
 // 오프라인에서도 앱이 열리게 하는 서비스 워커 등록
 if ('serviceWorker' in navigator) {

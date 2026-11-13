@@ -442,6 +442,20 @@ body.focus .focus-exit { display: block; }
 }
 .chip.on { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
 
+.log-box { margin-top: 8px; font-size: 13px; color: var(--muted); }
+.log-box summary { cursor: pointer; padding: 6px 0; }
+.log-box pre {
+  margin: 8px 0 0;
+  max-height: 220px;
+  overflow: auto;
+  padding: 8px;
+  background: var(--panel-2);
+  border-radius: 8px;
+  font: 12px/1.5 Consolas, monospace;
+  white-space: pre-wrap;
+  user-select: text;
+}
+
 /* ── 물어보기 창 ── */
 .ask { width: min(400px, 100vw); }
 .ask form { padding: 20px 18px 14px; gap: 14px; }

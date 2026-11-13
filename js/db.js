@@ -24,8 +24,18 @@ function open() {
           history.createIndex('chapterId', 'chapterId');
         }
       };
-      req.onsuccess = () => resolve(req.result);
+      req.onsuccess = () => {
+        const db = req.result;
+        // 다른 창이 더 새 버전의 앱으로 저장소를 올리려 하면, 이 창이 길을 비켜 주고 새로 연다.
+        db.onversionchange = () => {
+          db.close();
+          location.reload();
+        };
+        resolve(db);
+      };
       req.onerror = () => reject(req.error);
+      // 예전 버전 앱이 다른 창에 열려 있어서 저장소를 못 여는 경우
+      req.onblocked = () => reject(new Error('앱이 다른 창에도 열려 있어. 다른 창을 닫고 새로고침 해줘.'));
     });
   }
   return dbPromise;
