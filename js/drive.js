@@ -114,7 +114,9 @@ export async function call(path, { method = 'GET', body, headers = {}, raw = fal
   }
   if (!res.ok) {
     const text = await res.text().catch(() => '');
-    throw new Error(`드라이브 오류 ${res.status}: ${text.slice(0, 200)}`);
+    const err = new Error(`드라이브 오류 ${res.status}: ${text.slice(0, 200)}`);
+    err.status = res.status;
+    throw err;
   }
   if (raw) return res;
   return res.status === 204 ? null : res.json();

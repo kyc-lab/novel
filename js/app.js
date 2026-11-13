@@ -1,9 +1,10 @@
 import * as db from './db.js';
 import { countChars, fmt } from './count.js';
 import * as settings from './settings.js';
-import { askText, askConfirm } from './dialogs.js';
+import { askText, askConfirm, askChoice } from './dialogs.js';
 import * as symbols from './symbols.js';
 import * as drive from './drive.js';
+import * as sync from './sync.js';
 
 const SAVE_DELAY = 300; // 입력이 멈추고 이만큼(ms) 지나면 기기에 저장
 
@@ -55,14 +56,31 @@ function mainCount(text) {
 
 // ───────── 저장 ─────────
 
-function setStatus(text, busy = false) {
+function setStatus(text, kind = '') {
   el.saveStatus.textContent = text;
-  el.saveStatus.classList.toggle('busy', busy);
+  el.saveStatus.classList.toggle('busy', kind === 'busy');
+  el.saveStatus.classList.toggle('warn', kind === 'warn' || kind === 'action');
+  el.saveStatus.classList.toggle('action', kind === 'action'); // 누르면 뭔가 되는 상태
+}
+
+// 저장·동기화 상태를 한 줄로 보여준다.
+function refreshStatus() {
+  if (syncing) return setStatus('동기화 중…', 'busy');
+  if (saveFailed) return setStatus('기기 저장 실패!', 'warn');
+  if (dirty) return setStatus('저장 중…', 'busy');
+  if (!drive.wasConnected()) return setStatus('기기에 저장됨');
+  if (!navigator.onLine) return setStatus('오프라인 · 최신이 아닐 수 있음', 'warn');
+  if (!drive.isSignedIn()) return setStatus('드라이브 연결 필요 · 눌러서 연결', 'action');
+  if (syncError) return setStatus(syncError + ' · 눌러서 다시', 'action');
+  if (uploading) return setStatus('드라이브에 올리는 중…', 'busy');
+  if (pending) return setStatus('드라이브에 아직 안 올라감', 'warn');
+  setStatus(savedNow ? '저장 완료 · 닫아도 돼요' : '드라이브에 저장됨');
 }
 
 function scheduleSave() {
   dirty = true;
-  setStatus('저장 중…', true);
+  savedNow = false;
+  refreshStatus();
   clearTimeout(saveTimer);
   saveTimer = setTimeout(flush, SAVE_DELAY);
 }
@@ -78,25 +96,203 @@ async function flush() {
   ch.title = el.chapTitle.value.trim();
   ch.chars = countChars(ch.body);
   ch.updatedAt = Date.now();
+  ch.dirty = true; // 드라이브에 아직 안 올라감
   try {
     await db.put('chapters', ch);
-    if (!dirty) setStatus('기기에 저장됨');
+    saveFailed = false;
     updateListItem(ch);
+    markPending();
   } catch (err) {
     dirty = true;
-    setStatus('저장 실패!', true);
+    saveFailed = true;
+    refreshStatus();
     console.error(err);
   }
 }
 
-function saveCursor() {
+async function saveCursor() {
   if (!state.workId || !state.chapterId) return;
-  return db.setMeta('lastChapter:' + state.workId, {
+  await db.setMeta('lastChapter:' + state.workId, {
     id: state.chapterId,
     cursor: el.editor.selectionStart,
     scroll: el.editor.scrollTop,
   });
+  // "이 기기에서 마지막으로 쓰던 시각"은 작가가 직접 움직였을 때만 갱신한다(앱이 열리면서 저절로 바뀌면 안 됨).
+  if (userMoved) {
+    userMoved = false;
+    await db.setMeta('posUpdatedAt', Date.now());
+  }
 }
+let userMoved = false;
+
+// ───────── 드라이브 동기화 ─────────
+
+const PUSH_DELAY = 20000; // 기기에 저장하고 이만큼(ms) 지나면 드라이브에도 올린다
+let syncing = false; // 전체 동기화 중(원고 잠금)
+let uploading = false;
+let pending = false; // 드라이브에 아직 안 올라간 게 있음
+let savedNow = false; // 방금 임시저장을 눌러서 올림
+let saveFailed = false;
+let syncError = '';
+let pushTimer = null;
+let firstSync = true; // 앱을 연 뒤 첫 동기화(이때만 다른 기기의 마지막 자리로 이동)
+
+const canSync = () => drive.wasConnected() && navigator.onLine && drive.isSignedIn();
+
+function markPending() {
+  pending = drive.wasConnected();
+  refreshStatus();
+  clearTimeout(pushTimer);
+  if (pending) pushTimer = setTimeout(pushNow, PUSH_DELAY);
+}
+
+const currentPosition = () => ({
+  workId: state.workId,
+  chapterId: state.chapterId,
+  cursor: el.editor.selectionStart,
+  scroll: el.editor.scrollTop,
+});
+
+// 바뀐 것만 드라이브에 올린다(원고 입력은 안 막음). 성공하면 true.
+async function pushNow() {
+  clearTimeout(pushTimer);
+  if (syncing || uploading) return false;
+  await flush();
+  clearTimeout(pushTimer);
+  if (!canSync()) {
+    refreshStatus();
+    return false;
+  }
+  uploading = true;
+  refreshStatus();
+  let needFull = false;
+  try {
+    const res = await sync.pushDirty(currentPosition());
+    needFull = res.conflict;
+    syncError = '';
+    if (!needFull) pending = await sync.hasPending();
+  } catch (err) {
+    if (!(err instanceof drive.NeedSignIn)) {
+      syncError = '드라이브 올리기 실패';
+      console.error(err);
+    }
+  } finally {
+    uploading = false;
+    refreshStatus();
+  }
+  if (needFull) return runSync(); // 다른 기기가 먼저 고쳤다 → 전체 동기화로 맞춘다
+  return !pending && !syncError && canSync();
+}
+
+// 드라이브와 전체를 맞춘다. 그동안 원고 입력을 잠근다(덮어쓰기 사고 방지). 성공하면 true.
+async function runSync() {
+  if (syncing) return false;
+  if (!canSync()) {
+    refreshStatus();
+    return false;
+  }
+  syncing = true;
+  savedNow = false;
+  document.body.classList.add('syncing');
+  el.editor.readOnly = true;
+  el.chapTitle.readOnly = true;
+  refreshStatus();
+  let ok = false;
+  try {
+    await flush();
+    await saveCursor();
+    const res = await sync.syncAll();
+    await reloadFromDb(res);
+    await sync.pushDirty(firstSync ? null : currentPosition());
+    pending = await sync.hasPending();
+    syncError = '';
+    firstSync = false;
+    ok = true;
+  } catch (err) {
+    if (!(err instanceof drive.NeedSignIn)) {
+      syncError = '동기화 실패';
+      console.error(err);
+    }
+  } finally {
+    syncing = false;
+    document.body.classList.remove('syncing');
+    el.editor.readOnly = false;
+    el.chapTitle.readOnly = false;
+    refreshStatus();
+  }
+  return ok;
+}
+
+// 동기화가 끝난 뒤 기기에 저장된 내용으로 화면을 다시 맞춘다.
+async function reloadFromDb(res) {
+  state.works = (await db.getAll('works')).sort((a, b) => a.createdAt - b.createdAt);
+  if (!state.works.length) await createWork('새 작품');
+
+  // 앱을 막 열었고, 다른 기기에서 더 나중에 쓰던 자리가 있으면 거기로 간다.
+  const rs = res.remoteState;
+  const myPosAt = (await db.getMeta('posUpdatedAt')) ?? 0;
+  if (firstSync && rs && rs.device !== sync.deviceId && rs.updatedAt > myPosAt && state.works.some((w) => w.id === rs.workId)) {
+    await db.setMeta('lastChapter:' + rs.workId, { id: rs.chapterId, cursor: rs.cursor, scroll: rs.scroll });
+    state.chapterId = null;
+    await openWork(rs.workId);
+    return;
+  }
+
+  if (!state.works.some((w) => w.id === state.workId)) {
+    state.chapterId = null;
+    await openWork(state.works[0].id);
+    return;
+  }
+
+  const cursor = el.editor.selectionStart;
+  const scroll = el.editor.scrollTop;
+  state.chapters = (await db.getChaptersOf(state.workId)).sort((a, b) => a.order - b.order);
+  if (!state.chapters.length) await createChapter();
+  renderWorks();
+  const ch = currentChapter();
+  if (!ch) {
+    state.chapterId = null;
+    await openChapter(state.chapters.at(-1).id);
+    return;
+  }
+  // 지금 보던 회차가 드라이브 버전으로 바뀌었으면 화면도 바꾼다.
+  if (ch.body !== el.editor.value) {
+    el.editor.value = ch.body;
+    const pos = Math.min(cursor, ch.body.length);
+    el.editor.setSelectionRange(pos, pos);
+    el.editor.scrollTop = scroll;
+  }
+  el.chapTitle.value = ch.title;
+  el.chapNum.textContent = state.chapters.indexOf(ch) + 1 + '화';
+  renderChapters();
+  updateCounts();
+}
+
+const fmtTime = (ts) =>
+  new Date(ts).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+
+sync.init({
+  // 지금 화면에 올라와 있는 회차는 앱이 직접 고쳐서 저장한다.
+  async patchChapter(id, fn) {
+    const ch = state.chapters.find((c) => c.id === id);
+    if (!ch) return false;
+    fn(ch);
+    await db.put('chapters', ch);
+    return true;
+  },
+  // 두 기기에서 같은 회차를 따로 고쳤을 때: 작가가 고른다.
+  async resolveConflict(mine, theirs) {
+    const useRemote = await askChoice(
+      `「${mine.title || theirs.title || '제목 없음'}」 회차가 이 기기와 다른 기기에서 따로 고쳐졌어.\n\n` +
+        `이 기기: ${fmt(mainCount(mine.body))}자 · ${fmtTime(mine.updatedAt)}\n` +
+        `드라이브: ${fmt(mainCount(theirs.body))}자 · ${fmtTime(theirs.updatedAt)}\n\n` +
+        `어느 쪽을 쓸까? 안 고른 쪽은 되돌리기 기록에 남아.`,
+      '이 기기 버전',
+      '드라이브 버전',
+    );
+    return useRemote ? 'remote' : 'local';
+  },
+});
 
 function scheduleCursorSave() {
   clearTimeout(cursorTimer);
@@ -106,9 +302,11 @@ function scheduleCursorSave() {
 // ───────── 작품 ─────────
 
 async function createWork(title) {
-  const work = { id: uid(), title, createdAt: Date.now() };
+  const work = { id: uid(), title, createdAt: Date.now(), updatedAt: Date.now() };
   await db.put('works', work);
   state.works.push(work);
+  await sync.markWorksDirty();
+  markPending();
   return work;
 }
 
@@ -147,7 +345,10 @@ async function onWorkMenu(act) {
     const title = await askText('작품 제목', work.title);
     if (!title) return;
     work.title = title;
+    work.updatedAt = Date.now();
     await db.put('works', work);
+    await sync.markWorksDirty();
+    markPending();
     renderWorks();
   } else if (act === 'delete') {
     const ok = await askConfirm(
@@ -158,8 +359,13 @@ async function onWorkMenu(act) {
     if (!ok) return;
     dirty = false;
     clearTimeout(saveTimer);
-    for (const c of state.chapters) await db.del('chapters', c.id);
+    for (const c of state.chapters) {
+      await db.del('chapters', c.id);
+      await sync.addTombstone('chapter', c.id);
+    }
     await db.del('works', work.id);
+    await sync.addTombstone('work', work.id);
+    markPending();
     state.works = state.works.filter((w) => w.id !== work.id);
     if (!state.works.length) await createWork('새 작품');
     await openWork(state.works[0].id);
@@ -180,9 +386,11 @@ async function createChapter() {
     done: false,
     createdAt: Date.now(),
     updatedAt: Date.now(),
+    dirty: true,
   };
   await db.put('chapters', ch);
   state.chapters.push(ch);
+  markPending();
   return ch;
 }
 
@@ -200,7 +408,7 @@ async function openChapter(id, restore) {
   el.editor.scrollTop = restore?.scroll ?? el.editor.scrollHeight;
   renderChapters();
   updateCounts();
-  setStatus('기기에 저장됨');
+  refreshStatus();
   await saveCursor();
 }
 
@@ -263,12 +471,16 @@ async function onChapterClick(e) {
   const act = btn.dataset.act;
 
   if (act === 'open') {
+    userMoved = true;
     if (id !== state.chapterId) await openChapter(id);
     closeSidebar();
   } else if (act === 'done') {
     await flush();
     ch.done = !ch.done;
+    ch.updatedAt = Date.now();
+    ch.dirty = true;
     await db.put('chapters', ch);
+    markPending();
     renderChapters();
   } else if (act === 'delete') {
     const no = state.chapters.indexOf(ch) + 1;
@@ -284,6 +496,8 @@ async function onChapterClick(e) {
       clearTimeout(saveTimer);
     }
     await db.del('chapters', id);
+    await sync.addTombstone('chapter', id);
+    markPending();
     const idx = state.chapters.indexOf(ch);
     state.chapters.splice(idx, 1);
     if (!state.chapters.length) await createChapter();
@@ -340,10 +554,18 @@ function closeSidebar() {
 el.editor.addEventListener('input', () => {
   updateCounts();
   scheduleSave();
+  userMoved = true;
   scheduleCursorSave();
 });
 for (const type of ['keyup', 'click', 'select', 'scroll']) {
-  el.editor.addEventListener(type, scheduleCursorSave, { passive: true });
+  el.editor.addEventListener(
+    type,
+    () => {
+      if (type === 'keyup' || type === 'click') userMoved = true;
+      scheduleCursorSave();
+    },
+    { passive: true },
+  );
 }
 el.chapTitle.addEventListener('input', scheduleSave);
 el.chapTitle.addEventListener('keydown', (e) => {
@@ -361,6 +583,7 @@ el.chapList.addEventListener('click', onChapterClick);
 el.btnNewChap.addEventListener('click', async () => {
   await flush();
   const ch = await createChapter();
+  userMoved = true;
   await openChapter(ch.id);
   closeSidebar();
   el.editor.focus();
@@ -386,8 +609,46 @@ settings.onChange(() => {
 // 다른 앱으로 넘어가거나 창을 닫을 때 마지막 한 글자까지 저장
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'hidden') {
-    flush();
     saveCursor();
+    if (pending) pushNow(); // 나가는 김에 드라이브에도 올려 본다(pushNow가 기기 저장도 같이 함)
+    else flush();
+  } else {
+    runSync(); // 다른 앱 보다가 돌아오면 먼저 드라이브 확인
+  }
+});
+window.addEventListener('online', runSync);
+window.addEventListener('offline', refreshStatus);
+
+// 임시저장: 지금 바로 드라이브에 올린다.
+$('#btnSaveNow').addEventListener('click', async (e) => {
+  const btn = e.currentTarget;
+  btn.disabled = true;
+  try {
+    await flush();
+    if (!drive.wasConnected() || !drive.isSignedIn()) {
+      if (!navigator.onLine) return refreshStatus();
+      await drive.signIn(); // 버튼을 누른 직후라 로그인 창을 띄울 수 있다
+    }
+    const ok = firstSync ? (await runSync()) && (await pushNow()) : await pushNow();
+    savedNow = ok;
+  } catch (err) {
+    syncError = err.message;
+  } finally {
+    btn.disabled = false;
+    refreshStatus();
+  }
+});
+
+// 상태 글자를 눌렀을 때: 연결이 필요하면 연결, 실패했으면 다시 시도.
+el.saveStatus.addEventListener('click', async () => {
+  if (!el.saveStatus.classList.contains('action')) return;
+  try {
+    if (!drive.isSignedIn()) await drive.signIn();
+    syncError = '';
+    await runSync();
+  } catch (err) {
+    syncError = err.message;
+    refreshStatus();
   }
 });
 window.addEventListener('pagehide', () => {
@@ -405,6 +666,12 @@ async function init() {
   await openWork(start.id);
   // 브라우저가 공간이 모자랄 때 원고를 멋대로 지우지 않게 부탁해 둔다.
   navigator.storage?.persist?.();
+  // 기기에 있는 원고로 먼저 열고, 바로 드라이브를 확인한다.
+  if (drive.wasConnected()) {
+    pending = await sync.hasPending();
+    refreshStatus();
+    await runSync();
+  }
 }
 
 // ───────── 구글 드라이브 연결 (설정 창) ─────────
@@ -436,6 +703,8 @@ driveBtn.addEventListener('click', async () => {
   try {
     await drive.signIn();
     await drive.ensureFolder();
+    $('#settingsDlg').close();
+    await runSync(); // 연결하자마자 드라이브와 맞춘다
   } catch (err) {
     driveMsg.textContent = err.message;
   } finally {
@@ -453,5 +722,5 @@ if ('serviceWorker' in navigator) {
 
 init().catch((err) => {
   console.error(err);
-  setStatus('열기 실패 — 새로고침 해줘', true);
+  setStatus('열기 실패 — 새로고침 해줘', 'warn');
 });

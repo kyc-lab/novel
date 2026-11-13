@@ -2,7 +2,7 @@
 // 회차는 한 편이 한 덩어리 — 나중에 드라이브에도 회차별 파일로 올리기 위해서.
 
 const DB_NAME = 'novel-app';
-const DB_VERSION = 1;
+const DB_VERSION = 2; // 2: 되돌리기 기록(history) 칸 추가
 
 let dbPromise;
 
@@ -12,10 +12,17 @@ function open() {
       const req = indexedDB.open(DB_NAME, DB_VERSION);
       req.onupgradeneeded = () => {
         const db = req.result;
-        db.createObjectStore('works', { keyPath: 'id' });
-        const chapters = db.createObjectStore('chapters', { keyPath: 'id' });
-        chapters.createIndex('workId', 'workId');
-        db.createObjectStore('meta');
+        const has = (name) => db.objectStoreNames.contains(name);
+        if (!has('works')) db.createObjectStore('works', { keyPath: 'id' });
+        if (!has('chapters')) {
+          const chapters = db.createObjectStore('chapters', { keyPath: 'id' });
+          chapters.createIndex('workId', 'workId');
+        }
+        if (!has('meta')) db.createObjectStore('meta');
+        if (!has('history')) {
+          const history = db.createObjectStore('history', { keyPath: 'id' });
+          history.createIndex('chapterId', 'chapterId');
+        }
       };
       req.onsuccess = () => resolve(req.result);
       req.onerror = () => reject(req.error);
@@ -36,6 +43,7 @@ async function run(store, mode, fn) {
 }
 
 export const getAll = (store) => run(store, 'readonly', (s) => s.getAll());
+export const get = (store, id) => run(store, 'readonly', (s) => s.get(id));
 export const put = (store, value) => run(store, 'readwrite', (s) => s.put(value));
 export const del = (store, id) => run(store, 'readwrite', (s) => s.delete(id));
 

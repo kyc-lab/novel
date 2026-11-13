@@ -3,7 +3,7 @@
 //       안 되거나 3초 넘게 걸리면 기기에 담아 둔 파일을 쓴다.
 // 원고는 여기가 아니라 IndexedDB에 따로 저장되므로 이 파일과 무관하게 안전하다.
 
-const CACHE = 'jipil-v2';
+const CACHE = 'jipil-v3';
 const FILES = [
   './',
   'index.html',
@@ -17,6 +17,7 @@ const FILES = [
   'js/symbols.js',
   'js/config.js',
   'js/drive.js',
+  'js/sync.js',
   'icons/icon-192.png',
   'icons/icon-512.png',
 ];
