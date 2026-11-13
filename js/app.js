@@ -221,6 +221,7 @@ async function pushNow() {
   clearTimeout(pushTimer);
   if (syncing || uploading) return false;
   await flush();
+  await wiki.flush();
   clearTimeout(pushTimer);
   if (!canSync()) {
     refreshStatus();
@@ -261,15 +262,18 @@ async function runSync() {
   document.body.classList.add('syncing');
   el.editor.readOnly = true;
   el.chapTitle.readOnly = true;
+  $('#wikiBody').readOnly = true;
   refreshStatus();
   let ok = false;
   try {
     await flush();
+    await wiki.flush();
     await saveCursor();
     const res = await sync.syncAll();
     syncNote = '화면 맞추는 중';
     refreshStatus();
     await reloadFromDb(res);
+    await wiki.reload(); // 위키 화면도 받아온 내용으로 맞춘다
     await sync.pushDirty(firstSync ? null : currentPosition());
     pending = await sync.hasPending();
     syncError = '';
@@ -286,6 +290,7 @@ async function runSync() {
     document.body.classList.remove('syncing');
     el.editor.readOnly = false;
     el.chapTitle.readOnly = false;
+    $('#wikiBody').readOnly = false;
     refreshStatus();
   }
   return ok;
@@ -354,6 +359,7 @@ sync.init({
     return true;
   },
   // 두 기기에서 같은 회차를 따로 고쳤을 때: 작가가 고른다.
+  patchWiki: (id, fn) => wiki.patch(id, fn),
   resolveConflict: (mine, theirs) => history.askConflict(mine, theirs, countLabel),
 });
 
@@ -465,7 +471,10 @@ async function onWorkMenu(act) {
       await db.del('chapters', c.id);
       await sync.addTombstone('chapter', c.id);
     }
-    for (const doc of await db.getWikiOf(work.id)) await db.del('wiki', doc.id);
+    for (const doc of await db.getWikiOf(work.id)) {
+      await db.del('wiki', doc.id);
+      await sync.addTombstone('wiki', doc.id);
+    }
     await db.del('works', work.id);
     await sync.addTombstone('work', work.id);
     markPending();
@@ -751,7 +760,14 @@ $('#btnSaveNow').addEventListener('click', async (e) => {
 
 // ───────── 위키 화면 ─────────
 
-wiki.init({});
+wiki.init({
+  // 문서를 고치면 드라이브에 올릴 게 생긴 것
+  onChange: () => markPending(),
+  async onDelete(id) {
+    await sync.addTombstone('wiki', id);
+    markPending();
+  },
+});
 
 async function setWikiMode(on) {
   if (on) {

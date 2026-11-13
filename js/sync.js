@@ -50,6 +50,8 @@ let hooks = {
   progress: () => {},
   // 앱이 지금 들고 있는 회차면 앱이 직접 고치고 true를 돌려준다(기기 저장과 엇갈리지 않게).
   patchChapter: async () => false,
+  // 위키 문서도 마찬가지(위키 화면에 열려 있는 문서)
+  patchWiki: async () => false,
   // 충돌: 'local'(이 기기 버전) 또는 'remote'(드라이브 버전)를 돌려준다.
   resolveConflict: async () => 'local',
 };
@@ -76,6 +78,7 @@ async function getBook() {
     stateId: null,
     deletedWorks: {}, // { 작품id: 지운 시각 }
     deletedChapters: {},
+    deletedWiki: {},
     everSynced: false,
     ...((await db.getMeta('sync')) ?? {}),
   };
@@ -90,7 +93,8 @@ export async function markWorksDirty() {
 
 export async function addTombstone(kind, id) {
   const book = await getBook();
-  (kind === 'work' ? book.deletedWorks : book.deletedChapters)[id] = Date.now();
+  const list = kind === 'work' ? book.deletedWorks : kind === 'wiki' ? book.deletedWiki : book.deletedChapters;
+  list[id] = Date.now();
   book.worksDirty = true;
   await setBook(book);
 }
@@ -99,7 +103,8 @@ export async function addTombstone(kind, id) {
 export async function hasPending() {
   const book = await getBook();
   if (book.worksDirty) return true;
-  return (await db.getAll('chapters')).some((c) => c.dirty);
+  for (const kind of KINDS) if ((await db.getAll(kind.store)).some((x) => x.dirty)) return true;
+  return false;
 }
 
 // ───────── 드라이브 파일 다루기 ─────────
@@ -167,50 +172,76 @@ async function currentVer(id) {
   }
 }
 
-// ───────── 회차 ─────────
+// ───────── 회차 · 위키 문서 (둘 다 "하나가 파일 하나"라서 같은 방식으로 맞춘다) ─────────
 
-// 드라이브에 올리는 모양(동기화용 꼬리표는 뺀다)
-const toRemote = (ch) => ({
-  id: ch.id,
-  workId: ch.workId,
-  order: ch.order,
-  title: ch.title,
-  body: ch.body,
-  done: ch.done,
-  createdAt: ch.createdAt,
-  updatedAt: ch.updatedAt,
-  pdfId: ch.pdfId ?? null, // 회차 완료 때 올린 PDF 파일 번호(다른 기기에서 다시 완료해도 같은 파일을 고치게)
-  txtId: ch.txtId ?? null, // 같이 올린 원문(txt) 파일 번호
-});
+const KINDS = [
+  {
+    name: '회차',
+    store: 'chapters',
+    prefix: CH_PREFIX, // 드라이브 파일 이름 ch-<id>.json
+    tomb: 'deletedChapters',
+    hook: 'patchChapter',
+    // 드라이브에 올리는 모양(동기화용 꼬리표는 뺀다)
+    toRemote: (ch) => ({
+      id: ch.id,
+      workId: ch.workId,
+      order: ch.order,
+      title: ch.title,
+      body: ch.body,
+      done: ch.done,
+      createdAt: ch.createdAt,
+      updatedAt: ch.updatedAt,
+      pdfId: ch.pdfId ?? null, // 회차 완료 때 올린 PDF 파일 번호(다른 기기에서 다시 완료해도 같은 파일을 고치게)
+      txtId: ch.txtId ?? null, // 같이 올린 원문(txt) 파일 번호
+    }),
+    same: (a, b) =>
+      a.body === b.body && a.title === b.title && !!a.done === !!b.done && a.order === b.order && a.workId === b.workId,
+  },
+  {
+    name: '위키',
+    store: 'wiki',
+    prefix: 'wk-', // wk-<id>.json
+    tomb: 'deletedWiki',
+    hook: 'patchWiki',
+    toRemote: (d) => ({
+      id: d.id,
+      workId: d.workId,
+      title: d.title,
+      category: d.category,
+      body: d.body,
+      createdAt: d.createdAt,
+      updatedAt: d.updatedAt,
+    }),
+    same: (a, b) => a.body === b.body && a.title === b.title && a.category === b.category && a.workId === b.workId,
+  },
+];
 
-const sameContent = (a, b) =>
-  a.body === b.body && a.title === b.title && !!a.done === !!b.done && a.order === b.order && a.workId === b.workId;
-
-async function patchChapter(id, fn) {
-  if (await hooks.patchChapter(id, fn)) return;
-  const rec = await db.get('chapters', id);
+async function patchItem(kind, id, fn) {
+  if (await hooks[kind.hook](id, fn)) return;
+  const rec = await db.get(kind.store, id);
   if (!rec) return;
   fn(rec);
-  await db.put('chapters', rec);
+  await db.put(kind.store, rec);
 }
 
-// 회차 하나를 올린다. 저장 직전에 드라이브 버전을 한 번 더 확인해서, 그 사이 다른 기기가 고쳤으면 올리지 않고 'conflict'.
-async function pushChapter(ch, folder) {
-  const sentAt = ch.updatedAt;
-  const data = toRemote(ch);
+// 하나를 올린다. 저장 직전에 드라이브 버전을 한 번 더 확인해서, 그 사이 다른 기기가 고쳤으면 올리지 않고 'conflict'.
+async function pushItem(kind, item, folder) {
+  const sentAt = item.updatedAt;
+  const data = kind.toRemote(item);
+  const fileName = `${kind.prefix}${item.id}.json`;
   let res;
-  if (ch.remoteId) {
-    const ver = await currentVer(ch.remoteId);
-    if (ver && ver !== ch.remoteVer) {
-      log(`올리려는데 드라이브 쪽이 먼저 바뀜 ${label(ch)}`);
+  if (item.remoteId) {
+    const ver = await currentVer(item.remoteId);
+    if (ver && ver !== item.remoteVer) {
+      log(`올리려는데 드라이브 쪽이 먼저 바뀜 · ${kind.name} ${label(item)}`);
       return 'conflict';
     }
-    res = ver ? await updateFile(ch.remoteId, data) : await createFile(folder, `${CH_PREFIX}${ch.id}.json`, data);
+    res = ver ? await updateFile(item.remoteId, data) : await createFile(folder, fileName, data);
   } else {
-    res = await createFile(folder, `${CH_PREFIX}${ch.id}.json`, data);
+    res = await createFile(folder, fileName, data);
   }
-  log(`올림 ${label(ch)}`);
-  await patchChapter(ch.id, (rec) => {
+  log(`올림 · ${kind.name} ${label(item)}`);
+  await patchItem(kind, item.id, (rec) => {
     rec.remoteId = res.id;
     rec.remoteVer = res.md5Checksum;
     if (rec.updatedAt === sentAt) rec.dirty = false; // 올리는 사이에 또 고쳤으면 dirty 유지
@@ -218,9 +249,9 @@ async function pushChapter(ch, folder) {
   return 'ok';
 }
 
-async function storeRemoteChapter(data, file) {
-  log(`받음 ${label(data)}`);
-  await db.put('chapters', { ...data, remoteId: file.id, remoteVer: file.md5Checksum, dirty: false });
+async function storeRemote(kind, data, file) {
+  log(`받음 · ${kind.name} ${label(data)}`);
+  await db.put(kind.store, { ...data, remoteId: file.id, remoteVer: file.md5Checksum, dirty: false });
 }
 
 const addHistory = (ch, reason) => history.add(ch, reason);
@@ -237,8 +268,9 @@ const worksPayload = (works, book) => ({
       folderId: w.folderId ?? null, // 완료 회차(PDF·txt)를 모아 두는 이 작품의 드라이브 폴더
     }))
     .sort((a, b) => (a.id < b.id ? -1 : 1)),
-  deletedWorks: book.deletedWorks,
-  deletedChapters: book.deletedChapters,
+  deletedWorks: book.deletedWorks ?? {},
+  deletedChapters: book.deletedChapters ?? {},
+  deletedWiki: book.deletedWiki ?? {},
 });
 const stable = (obj) => JSON.stringify(obj, (k, v) => (v && typeof v === 'object' && !Array.isArray(v) ? Object.fromEntries(Object.entries(v).sort()) : v));
 
@@ -246,9 +278,11 @@ const stable = (obj) => JSON.stringify(obj, (k, v) => (v && typeof v === 'object
 async function dropPristineWorks() {
   const works = await db.getAll('works');
   const chapters = await db.getAll('chapters');
+  const wikiDocs = await db.getAll('wiki');
   for (const w of works) {
     const mine = chapters.filter((c) => c.workId === w.id);
-    if (w.title === '새 작품' && mine.every((c) => !c.body && !c.title && !c.remoteId)) {
+    const hasWiki = wikiDocs.some((d) => d.workId === w.id);
+    if (w.title === '새 작품' && !hasWiki && mine.every((c) => !c.body && !c.title && !c.remoteId)) {
       for (const c of mine) await db.del('chapters', c.id);
       await db.del('works', w.id);
     }
@@ -266,9 +300,8 @@ export async function syncAll() {
   const remote = await listRemote(folder);
   const book = await getBook();
   const result = { pulled: 0, pushed: 0, conflicts: 0, remoteState: null };
-  const total = [...remote.keys()].filter((n) => n.startsWith(CH_PREFIX)).length;
-  log(`드라이브 파일 ${remote.size}개 (회차 ${total}개)`);
-  let step = 0;
+  const countOf = (kind) => [...remote.keys()].filter((n) => n.startsWith(kind.prefix)).length;
+  log(`드라이브 파일 ${remote.size}개 (${KINDS.map((k) => `${k.name} ${countOf(k)}개`).join(', ')})`);
 
   // 1) 작품 목록 합치기
   const worksFile = remote.get('works.json');
@@ -278,6 +311,7 @@ export async function syncAll() {
     if (!book.everSynced) await dropPristineWorks();
     Object.entries(remoteWorks.deletedWorks ?? {}).forEach(([id, at]) => (book.deletedWorks[id] ??= at));
     Object.entries(remoteWorks.deletedChapters ?? {}).forEach(([id, at]) => (book.deletedChapters[id] ??= at));
+    Object.entries(remoteWorks.deletedWiki ?? {}).forEach(([id, at]) => (book.deletedWiki[id] ??= at));
     const localWorks = new Map((await db.getAll('works')).map((w) => [w.id, w]));
     for (const rw of remoteWorks.works ?? []) {
       if (book.deletedWorks[rw.id]) continue;
@@ -288,79 +322,85 @@ export async function syncAll() {
 
   // 2) 지운 표시를 이 기기에 적용
   for (const w of await db.getAll('works')) if (book.deletedWorks[w.id]) await db.del('works', w.id);
-  for (const c of await db.getAll('chapters')) {
-    if (book.deletedChapters[c.id] || book.deletedWorks[c.workId]) {
-      if (c.dirty) await addHistory(c, '다른 기기에서 지워짐');
-      await db.del('chapters', c.id);
+  for (const kind of KINDS) {
+    for (const x of await db.getAll(kind.store)) {
+      if (book[kind.tomb][x.id] || book.deletedWorks[x.workId]) {
+        if (x.dirty) await addHistory(x, '다른 기기에서 지워짐');
+        await db.del(kind.store, x.id);
+      }
     }
   }
 
-  // 3) 회차 맞추기
-  const local = new Map((await db.getAll('chapters')).map((c) => [c.id, c]));
-  const seen = new Set();
-  for (const [name, file] of remote) {
-    if (!name.startsWith(CH_PREFIX)) continue;
-    const id = name.slice(CH_PREFIX.length, -'.json'.length);
-    seen.add(id);
-    hooks.progress(`회차 확인 ${++step}/${total}`);
-    if (book.deletedChapters[id]) {
-      await trash(file.id);
-      continue;
-    }
-    const mine = local.get(id);
+  // 3) 회차 · 위키 문서 맞추기
+  for (const kind of KINDS) {
+    const total = countOf(kind);
+    let step = 0;
+    const local = new Map((await db.getAll(kind.store)).map((x) => [x.id, x]));
+    const seen = new Set();
+    for (const [name, file] of remote) {
+      if (!name.startsWith(kind.prefix)) continue;
+      const id = name.slice(kind.prefix.length, -'.json'.length);
+      seen.add(id);
+      hooks.progress(`${kind.name} 확인 ${++step}/${total}`);
+      if (book[kind.tomb][id]) {
+        await trash(file.id);
+        continue;
+      }
+      const mine = local.get(id);
 
-    if (!mine) {
+      if (!mine) {
+        const data = await download(file.id);
+        if (book.deletedWorks[data.workId]) await trash(file.id);
+        else {
+          await storeRemote(kind, data, file);
+          result.pulled++;
+        }
+        continue;
+      }
+
+      const remoteChanged = file.md5Checksum !== mine.remoteVer || file.id !== mine.remoteId;
+      if (!remoteChanged) {
+        if (mine.dirty && (await pushItem(kind, mine, folder)) === 'ok') result.pushed++;
+        continue;
+      }
+
       const data = await download(file.id);
-      if (book.deletedWorks[data.workId]) await trash(file.id);
-      else {
-        await storeRemoteChapter(data, file);
+      if (!mine.dirty) {
+        if (!kind.same(mine, data)) await addHistory(mine, '다른 기기 버전을 받기 전');
+        await storeRemote(kind, data, file);
         result.pulled++;
-      }
-      continue;
-    }
-
-    const remoteChanged = file.md5Checksum !== mine.remoteVer || file.id !== mine.remoteId;
-    if (!remoteChanged) {
-      if (mine.dirty && (await pushChapter(mine, folder)) === 'ok') result.pushed++;
-      continue;
-    }
-
-    const data = await download(file.id);
-    if (!mine.dirty) {
-      if (!sameContent(mine, data)) await addHistory(mine, '다른 기기 버전을 받기 전');
-      await storeRemoteChapter(data, file);
-      result.pulled++;
-    } else if (sameContent(mine, data)) {
-      await patchChapter(id, (rec) => Object.assign(rec, { remoteId: file.id, remoteVer: file.md5Checksum, dirty: false }));
-    } else {
-      // 둘 다 바뀜 → 작가가 고른다. 안 고른 쪽은 되돌리기 기록에 남긴다.
-      result.conflicts++;
-      log(`충돌 ${label(mine)} ↔ 드라이브 ${label(data)} — 작가 선택 대기`);
-      hooks.progress('어느 버전을 쓸지 골라줘');
-      const choice = await hooks.resolveConflict(mine, data);
-      log(`선택: ${choice === 'remote' ? '드라이브 버전' : '이 기기 버전'}`);
-      if (choice === 'remote') {
-        await addHistory(mine, '충돌 · 이 기기 버전');
-        await storeRemoteChapter(data, file);
-        result.pulled++;
+      } else if (kind.same(mine, data)) {
+        await patchItem(kind, id, (rec) => Object.assign(rec, { remoteId: file.id, remoteVer: file.md5Checksum, dirty: false }));
       } else {
-        await addHistory(data, '충돌 · 드라이브 버전');
-        const fresh = { ...mine, remoteId: file.id, remoteVer: file.md5Checksum };
-        await patchChapter(id, (rec) => Object.assign(rec, { remoteId: file.id, remoteVer: file.md5Checksum }));
-        if ((await pushChapter(fresh, folder)) === 'ok') result.pushed++;
+        // 둘 다 바뀜 → 작가가 고른다. 안 고른 쪽은 되돌리기 기록에 남긴다.
+        result.conflicts++;
+        log(`충돌 · ${kind.name} ${label(mine)} ↔ 드라이브 ${label(data)} — 작가 선택 대기`);
+        hooks.progress('어느 버전을 쓸지 골라줘');
+        const choice = await hooks.resolveConflict(mine, data, kind.name);
+        log(`선택: ${choice === 'remote' ? '드라이브 버전' : '이 기기 버전'}`);
+        if (choice === 'remote') {
+          await addHistory(mine, '충돌 · 이 기기 버전');
+          await storeRemote(kind, data, file);
+          result.pulled++;
+        } else {
+          await addHistory(data, '충돌 · 드라이브 버전');
+          const fresh = { ...mine, remoteId: file.id, remoteVer: file.md5Checksum };
+          await patchItem(kind, id, (rec) => Object.assign(rec, { remoteId: file.id, remoteVer: file.md5Checksum }));
+          if ((await pushItem(kind, fresh, folder)) === 'ok') result.pushed++;
+        }
       }
     }
-  }
-  // 드라이브에 파일이 없는 회차 → 새로 올린다(처음 올리는 회차, 또는 드라이브에서 누가 파일을 지운 경우)
-  for (const [id, mine] of local) {
-    if (seen.has(id)) continue;
-    hooks.progress('새 회차 올리는 중');
-    if ((await pushChapter({ ...mine, remoteId: null, remoteVer: null }, folder)) === 'ok') result.pushed++;
+    // 드라이브에 파일이 없는 것 → 새로 올린다(처음 올리는 것, 또는 드라이브에서 누가 파일을 지운 경우)
+    for (const [id, mine] of local) {
+      if (seen.has(id)) continue;
+      hooks.progress(`새 ${kind.name} 올리는 중`);
+      if ((await pushItem(kind, { ...mine, remoteId: null, remoteVer: null }, folder)) === 'ok') result.pushed++;
+    }
   }
 
   // 4) 작품 목록 올리기(드라이브 것과 다를 때만)
   const merged = worksPayload(await db.getAll('works'), book);
-  const remoteSame = remoteWorks && stable(worksPayload(remoteWorks.works ?? [], { deletedWorks: remoteWorks.deletedWorks ?? {}, deletedChapters: remoteWorks.deletedChapters ?? {} })) === stable(merged);
+  const remoteSame = remoteWorks && stable(worksPayload(remoteWorks.works ?? [], remoteWorks)) === stable(merged);
   if (remoteSame) {
     book.worksId = worksFile.id;
     book.worksVer = worksFile.md5Checksum;
@@ -393,10 +433,12 @@ export async function pushDirty(position) {
   if (!book.everSynced) return { conflict: true }; // 한 번도 안 맞춰 봤으면 전체 동기화부터
 
   let pushed = 0;
-  for (const ch of await db.getAll('chapters')) {
-    if (!ch.dirty) continue;
-    if ((await pushChapter(ch, folder)) === 'conflict') return { conflict: true, pushed };
-    pushed++;
+  for (const kind of KINDS) {
+    for (const item of await db.getAll(kind.store)) {
+      if (!item.dirty) continue;
+      if ((await pushItem(kind, item, folder)) === 'conflict') return { conflict: true, pushed };
+      pushed++;
+    }
   }
 
   const fresh = await getBook();
@@ -405,11 +447,13 @@ export async function pushDirty(position) {
     const payload = worksPayload(await db.getAll('works'), fresh);
     const res = fresh.worksId ? await updateFile(fresh.worksId, payload) : await createFile(folder, 'works.json', payload);
     Object.assign(fresh, { worksId: res.id, worksVer: res.md5Checksum, worksDirty: false });
-    // 지운 회차의 드라이브 파일은 휴지통으로
+    // 지운 회차·위키 문서의 드라이브 파일은 휴지통으로
     const remote = await listRemote(folder);
-    for (const id of Object.keys(fresh.deletedChapters)) {
-      const f = remote.get(`${CH_PREFIX}${id}.json`);
-      if (f) await trash(f.id);
+    for (const kind of KINDS) {
+      for (const id of Object.keys(fresh[kind.tomb])) {
+        const f = remote.get(`${kind.prefix}${id}.json`);
+        if (f) await trash(f.id);
+      }
     }
     await setBook(fresh);
   }

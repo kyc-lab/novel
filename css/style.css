@@ -117,7 +117,7 @@ button { cursor: pointer; background: none; border: 0; }
 .tb-break { display: none; }
 .text-btn:disabled { opacity: .5; cursor: default; }
 /* 동기화 중에는 원고를 잠깐 잠근다 */
-body.syncing .editor { opacity: .55; }
+body.syncing .editor, body.syncing .wiki-body { opacity: .55; }
 
 /* ── 왼쪽 목록 ── */
 .sidebar {

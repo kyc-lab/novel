@@ -292,6 +292,15 @@ export async function open(id) {
   renderDoc();
 }
 
+// 동기화가 "올렸다"는 꼬리표를 붙일 때: 지금 들고 있는 문서면 여기서 직접 고쳐 저장하고 true.
+export async function patch(id, fn) {
+  const doc = docs.find((d) => d.id === id);
+  if (!doc) return false;
+  fn(doc);
+  await db.put('wiki', doc);
+  return true;
+}
+
 // 다른 기기에서 받아온 뒤 화면을 다시 맞춘다.
 export async function reload() {
   if (!workId || dirty) return;
