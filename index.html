@@ -18,7 +18,9 @@
       <div class="titles">
         <span id="chapNum" class="chap-num"></span>
         <input id="chapTitle" class="chap-title" type="text" placeholder="회차 제목" autocomplete="off">
+        <span id="wikiLabel" class="wiki-label"></span>
       </div>
+      <button id="btnWiki" class="text-btn" type="button" title="이 작품의 위키 열기">위키</button>
       <button id="saveStatus" class="save-status" type="button"></button>
       <span class="tb-break"></span>
       <button id="btnSaveNow" class="text-btn" type="button" title="지금 바로 드라이브에 올리기">임시저장</button>
@@ -50,6 +52,36 @@
     <main class="editor-wrap">
       <textarea id="editor" class="editor" placeholder="여기에 원고를 쓰세요." spellcheck="false"></textarea>
     </main>
+
+    <!-- 위키: "위키" 버튼을 누르면 원고 화면 대신 이게 보인다 -->
+    <section id="wiki" class="wiki" hidden>
+      <aside class="wiki-side">
+        <div class="wiki-side-head">
+          <input id="wikiSearch" type="search" placeholder="문서 찾기 (제목·내용)" autocomplete="off">
+          <button type="button" id="wikiNew" class="mini-btn primary">＋ 새 문서</button>
+        </div>
+        <ul id="wikiList" class="wiki-list"></ul>
+      </aside>
+      <article class="wiki-doc">
+        <div id="wikiEmpty" class="wiki-empty">
+          <p>왼쪽에서 문서를 고르거나 <b>＋ 새 문서</b>로 시작해.</p>
+          <p>인물, 장소, 세력, 설정처럼 이 소설에 대해 기억해 둘 것들을 문서로 정리하는 곳이야.</p>
+        </div>
+        <div id="wikiDocBox" class="wiki-doc-box" hidden>
+          <div class="wiki-doc-head">
+            <button type="button" id="wikiBack" class="icon-btn" aria-label="문서 목록으로">‹</button>
+            <input id="wikiTitle" class="wiki-title" type="text" placeholder="문서 제목" autocomplete="off">
+            <select id="wikiCat" aria-label="분류"></select>
+            <button type="button" id="wikiToggle" class="mini-btn">고치기</button>
+            <button type="button" id="wikiDel" class="mini-btn danger">삭제</button>
+          </div>
+          <div id="wikiView" class="wiki-view"></div>
+          <textarea id="wikiBody" class="wiki-body" spellcheck="false" hidden
+            placeholder="여기에 내용을 써.&#10;&#10;[[철수]] 처럼 쓰면 '철수' 문서로 가는 링크가 돼."></textarea>
+          <p id="wikiHint" class="hint wiki-hint">[[문서 제목]] = 그 문서로 가는 링크 · # 큰 제목 · ## 작은 제목 · - 목록</p>
+        </div>
+      </article>
+    </section>
 
     <!-- 아래쪽: 글자수 -->
     <footer class="bottombar">

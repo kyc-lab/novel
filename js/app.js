@@ -7,6 +7,7 @@ import * as drive from './drive.js';
 import * as sync from './sync.js';
 import * as history from './history.js';
 import { makeChapterPdf } from './pdf.js';
+import * as wiki from './wiki.js';
 
 const SAVE_DELAY = 300; // 입력이 멈추고 이만큼(ms) 지나면 기기에 저장
 
@@ -464,6 +465,7 @@ async function onWorkMenu(act) {
       await db.del('chapters', c.id);
       await sync.addTombstone('chapter', c.id);
     }
+    for (const doc of await db.getWikiOf(work.id)) await db.del('wiki', doc.id);
     await db.del('works', work.id);
     await sync.addTombstone('work', work.id);
     markPending();
@@ -746,6 +748,26 @@ $('#btnSaveNow').addEventListener('click', async (e) => {
     refreshStatus();
   }
 });
+
+// ───────── 위키 화면 ─────────
+
+wiki.init({});
+
+async function setWikiMode(on) {
+  if (on) {
+    await flush();
+    const work = state.works.find((w) => w.id === state.workId);
+    $('#wikiLabel').textContent = `${work.title} · 위키`;
+    await wiki.open(state.workId);
+  } else {
+    await wiki.flush();
+  }
+  document.body.classList.toggle('mode-wiki', on);
+  $('#wiki').hidden = !on;
+  $('#btnWiki').textContent = on ? '원고로' : '위키';
+  if (on) setFocusMode(false);
+}
+$('#btnWiki').addEventListener('click', () => setWikiMode(!document.body.classList.contains('mode-wiki')));
 
 // ───────── 회차 완료: PDF로 만들어 드라이브에 저장하고 완료 표시 ─────────
 

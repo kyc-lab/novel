@@ -2,7 +2,7 @@
 // 회차는 한 편이 한 덩어리 — 나중에 드라이브에도 회차별 파일로 올리기 위해서.
 
 const DB_NAME = 'novel-app';
-const DB_VERSION = 2; // 2: 되돌리기 기록(history) 칸 추가
+const DB_VERSION = 3; // 2: 되돌리기 기록(history) 칸 추가 / 3: 위키(wiki) 칸 추가
 
 let dbPromise;
 const blockedListeners = [];
@@ -24,6 +24,10 @@ function open() {
         if (!has('history')) {
           const history = db.createObjectStore('history', { keyPath: 'id' });
           history.createIndex('chapterId', 'chapterId');
+        }
+        if (!has('wiki')) {
+          const wiki = db.createObjectStore('wiki', { keyPath: 'id' });
+          wiki.createIndex('workId', 'workId');
         }
       };
       req.onsuccess = () => {
@@ -66,5 +70,7 @@ export const getChaptersOf = (workId) =>
 export const getHistoryOf = (chapterId) =>
   run('history', 'readonly', (s) => s.index('chapterId').getAll(chapterId));
 
-export const getMeta =(key) => run('meta', 'readonly', (s) => s.get(key));
+export const getWikiOf = (workId) => run('wiki', 'readonly', (s) => s.index('workId').getAll(workId));
+
+export const getMeta = (key) => run('meta', 'readonly', (s) => s.get(key));
 export const setMeta = (key, value) => run('meta', 'readwrite', (s) => s.put(value, key));

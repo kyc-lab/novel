@@ -3,7 +3,7 @@
 //       안 되거나 3초 넘게 걸리면 기기에 담아 둔 파일을 쓴다.
 // 원고는 여기가 아니라 IndexedDB에 따로 저장되므로 이 파일과 무관하게 안전하다.
 
-const CACHE = 'jipil-v9';
+const CACHE = 'jipil-v10';
 const FONT_CACHE = 'jipil-fonts-v1'; // 글꼴 전용(앱을 고쳐 올려도 지우지 않는다)
 const FILES = [
   './',
@@ -21,6 +21,7 @@ const FILES = [
   'js/sync.js',
   'js/history.js',
   'js/pdf.js',
+  'js/wiki.js',
   'icons/icon-192.png',
   'icons/icon-512.png',
 ];
