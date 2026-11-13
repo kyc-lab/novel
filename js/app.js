@@ -40,6 +40,7 @@ const state = {
   chapterId: null,
 };
 
+let blockedMsg = ''; // 저장소를 못 열고 있을 때 보여줄 안내
 let saveTimer = null;
 let cursorTimer = null;
 let dirty = false;
@@ -65,6 +66,7 @@ function setStatus(text, kind = '') {
 
 // 저장·동기화 상태를 한 줄로 보여준다.
 function refreshStatus() {
+  if (blockedMsg) return setStatus(blockedMsg, 'warn');
   if (syncing) return setStatus(`동기화 중… ${syncNote}`, 'busy');
   if (saveFailed) return setStatus('기기 저장 실패!', 'warn');
   if (dirty) return setStatus('저장 중…', 'busy');
@@ -668,8 +670,19 @@ window.addEventListener('pagehide', () => {
 
 // ───────── 시작 ─────────
 
+// 앱이 다른 창(예전 버전)에도 열려 있으면 원고 저장소를 못 연다. 그 창을 닫으면 저절로 이어진다.
+db.onBlocked(() => {
+  blockedMsg = '앱이 다른 창에도 열려 있어 · 그 창을 닫아줘';
+  el.editor.readOnly = true;
+  refreshStatus();
+});
+
 async function init() {
   state.works = (await db.getAll('works')).sort((a, b) => a.createdAt - b.createdAt);
+  if (blockedMsg) {
+    blockedMsg = '';
+    el.editor.readOnly = false;
+  }
   if (!state.works.length) await createWork('새 작품');
   const lastWorkId = await db.getMeta('lastWorkId');
   const start = state.works.find((w) => w.id === lastWorkId) ?? state.works[0];

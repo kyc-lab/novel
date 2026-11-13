@@ -5,6 +5,8 @@ const DB_NAME = 'novel-app';
 const DB_VERSION = 2; // 2: 되돌리기 기록(history) 칸 추가
 
 let dbPromise;
+const blockedListeners = [];
+export const onBlocked = (fn) => blockedListeners.push(fn);
 
 function open() {
   if (!dbPromise) {
@@ -34,8 +36,9 @@ function open() {
         resolve(db);
       };
       req.onerror = () => reject(req.error);
-      // 예전 버전 앱이 다른 창에 열려 있어서 저장소를 못 여는 경우
-      req.onblocked = () => reject(new Error('앱이 다른 창에도 열려 있어. 다른 창을 닫고 새로고침 해줘.'));
+      // 예전 버전 앱이 다른 창에 열려 있어서 저장소를 못 여는 경우.
+      // 그 창이 닫히면 저절로 이어서 열리므로 실패로 처리하지 않고 안내만 띄운다.
+      req.onblocked = () => blockedListeners.forEach((fn) => fn());
     });
   }
   return dbPromise;
