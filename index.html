@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
+  <meta name="theme-color" content="#17181B">
+  <title>집필</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon-192.png">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div id="app">
+    <!-- 위쪽 바 -->
+    <header class="topbar">
+      <button id="btnMenu" class="icon-btn" aria-label="회차 목록 열기">☰</button>
+      <div class="titles">
+        <span id="chapNum" class="chap-num"></span>
+        <input id="chapTitle" class="chap-title" type="text" placeholder="회차 제목" autocomplete="off">
+      </div>
+      <span id="saveStatus" class="save-status"></span>
+      <button id="btnFocus" class="icon-btn" aria-label="집중 모드" title="집중 모드">⛶</button>
+      <button id="btnSettings" class="icon-btn" aria-label="설정" title="설정">⚙</button>
+    </header>
+
+    <!-- 왼쪽: 작품 · 회차 목록 -->
+    <aside id="sidebar" class="sidebar">
+      <div class="work-row">
+        <select id="workSelect" aria-label="작품 선택"></select>
+        <button id="btnWorkMenu" class="icon-btn" aria-label="작품 관리">⋯</button>
+      </div>
+      <div id="workMenu" class="work-menu" hidden>
+        <button data-act="new">＋ 새 작품</button>
+        <button data-act="rename">작품 이름 바꾸기</button>
+        <button data-act="delete" class="danger">이 작품 삭제</button>
+      </div>
+      <ul id="chapList" class="chap-list"></ul>
+      <button id="btnNewChap" class="new-chap">＋ 새 회차</button>
+    </aside>
+
+    <!-- 기호 바: PC는 원고 위, 폰은 원고 아래 -->
+    <div id="symbolBar" class="symbol-bar" role="toolbar" aria-label="기호 넣기"></div>
+
+    <!-- 가운데: 원고 -->
+    <main class="editor-wrap">
+      <textarea id="editor" class="editor" placeholder="여기에 원고를 쓰세요." spellcheck="false"></textarea>
+    </main>
+
+    <!-- 아래쪽: 글자수 -->
+    <footer class="bottombar">
+      <div class="progress" aria-hidden="true"><div id="progressFill" class="progress-fill"></div></div>
+      <div class="counts">
+        <span id="countMain" class="count-main"></span>
+        <span id="countSub" class="count-sub"></span>
+        <span id="countGoal" class="count-goal"></span>
+      </div>
+    </footer>
+  </div>
+
+  <div id="backdrop" class="backdrop" hidden></div>
+
+  <!-- 본문 위에 떠 있는 작은 글자수 -->
+  <div id="overlayCount" class="overlay-count" aria-hidden="true"></div>
+  <!-- 집중 모드에서만 보이는 나가기 버튼 -->
+  <button id="btnFocusExit" class="focus-exit" title="집중 모드 끝내기 (Esc)">집중 모드 끝내기</button>
+
+  <!-- 물어보기 창 (이름 입력, 삭제 확인) -->
+  <dialog id="askDlg" class="sheet ask">
+    <form method="dialog">
+      <p id="askMsg"></p>
+      <input id="askInput" type="text" autocomplete="off">
+      <div class="ask-btns">
+        <button type="button" id="askCancel">취소</button>
+        <button type="submit" id="askOk" value="ok">확인</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- 설정 창 -->
+  <dialog id="settingsDlg" class="sheet">
+    <form>
+      <div class="sheet-head">
+        <h2>설정</h2>
+        <button type="button" class="icon-btn" data-close aria-label="닫기">✕</button>
+      </div>
+      <div class="sheet-body">
+        <h3>본문 모양 <small>이 기기에만 적용</small></h3>
+        <div class="row">
+          <span>글자 크기</span>
+          <button type="button" class="step" data-step="fontSize" data-dir="-1" aria-label="글자 작게">‹</button>
+          <input type="range" name="fontSize" min="14" max="28" step="1" aria-label="글자 크기">
+          <button type="button" class="step" data-step="fontSize" data-dir="1" aria-label="글자 크게">›</button>
+          <output data-show="fontSize"></output>
+        </div>
+        <div class="row">
+          <span>줄 간격</span>
+          <button type="button" class="step" data-step="lineHeight" data-dir="-1" aria-label="줄 간격 좁게">‹</button>
+          <input type="range" name="lineHeight" min="1.4" max="2.6" step="0.1" aria-label="줄 간격">
+          <button type="button" class="step" data-step="lineHeight" data-dir="1" aria-label="줄 간격 넓게">›</button>
+          <output data-show="lineHeight"></output>
+        </div>
+        <div class="row">
+          <span>본문 글꼴</span>
+          <div class="seg">
+            <label><input type="radio" name="bodyFont" value="serif"><span>명조</span></label>
+            <label><input type="radio" name="bodyFont" value="sans"><span>고딕</span></label>
+          </div>
+        </div>
+
+        <h3>화면</h3>
+        <div class="row">
+          <span>테마</span>
+          <div class="seg">
+            <label><input type="radio" name="theme" value="dark"><span>다크</span></label>
+            <label><input type="radio" name="theme" value="light"><span>라이트</span></label>
+          </div>
+        </div>
+        <div class="row">
+          <span>포인트 색</span>
+          <div class="swatches">
+            <button type="button" class="swatch" data-color="#5EC4B6" style="--c:#5EC4B6" aria-label="청록"></button>
+            <button type="button" class="swatch" data-color="#7AA7E8" style="--c:#7AA7E8" aria-label="파랑"></button>
+            <button type="button" class="swatch" data-color="#B08CE0" style="--c:#B08CE0" aria-label="보라"></button>
+            <button type="button" class="swatch" data-color="#E58FA6" style="--c:#E58FA6" aria-label="분홍"></button>
+            <button type="button" class="swatch" data-color="#E0A458" style="--c:#E0A458" aria-label="주황"></button>
+            <input type="color" name="accent" aria-label="직접 고르기">
+          </div>
+        </div>
+
+        <h3>글자수</h3>
+        <div class="row">
+          <span>세는 기준</span>
+          <div class="seg">
+            <label><input type="radio" name="countBasis" value="with"><span>공백 포함</span></label>
+            <label><input type="radio" name="countBasis" value="without"><span>공백 제외</span></label>
+            <label><input type="radio" name="countBasis" value="both"><span>둘 다</span></label>
+          </div>
+        </div>
+        <label class="row">
+          <span>줄바꿈도 글자수에 포함</span>
+          <input type="checkbox" name="countNewlines" class="switch">
+        </label>
+        <label class="row">
+          <span>회차 목표 글자수</span>
+          <input type="number" name="goal" min="100" step="100" inputmode="numeric">
+        </label>
+        <label class="row">
+          <span>본문 위에 작은 글자수 띄우기</span>
+          <input type="checkbox" name="overlay" class="switch">
+        </label>
+
+        <h3>자동 변환</h3>
+        <div class="row">
+          <span>말줄임표 모양</span>
+          <div class="seg">
+            <label><input type="radio" name="ellipsisStyle" value="mid"><span>⋯ 가운데</span></label>
+            <label><input type="radio" name="ellipsisStyle" value="low"><span>… 아래</span></label>
+          </div>
+        </div>
+        <p class="hint">점 세 개(...)를 치면 한 개, 바로 이어서 점을 하나 더 치면 두 개(점 여섯 개)가 돼.</p>
+        <label class="row">
+          <span><code>"</code> <code>'</code> → <b>“” ‘’</b> 따옴표 자동 짝 (커서는 가운데)</span>
+          <input type="checkbox" name="smartQuotes" class="switch">
+        </label>
+        <div id="ruleList"></div>
+        <div class="row add-row">
+          <input id="ruleFrom" type="text" placeholder="입력 (예: ;;)" maxlength="10" autocomplete="off" aria-label="입력할 글자">
+          <span class="arrow">→</span>
+          <input id="ruleTo" type="text" placeholder="바뀔 글자 (예: ♡)" maxlength="20" autocomplete="off" aria-label="바뀔 글자">
+          <button type="button" id="ruleAdd" class="mini-btn">추가</button>
+        </div>
+        <p id="ruleMsg" class="hint warn"></p>
+        <p class="hint">변환 직후에 백스페이스를 한 번 누르면 원래 입력으로 돌아가.</p>
+
+        <h3>기호 바 편집</h3>
+        <p class="hint">기호를 눌러 고른 다음 옮기거나 지워.</p>
+        <div id="symList" class="chips"></div>
+        <div class="row tools">
+          <button type="button" id="symLeft" class="mini-btn">‹ 앞으로</button>
+          <button type="button" id="symRight" class="mini-btn">뒤로 ›</button>
+          <button type="button" id="symDel" class="mini-btn danger">삭제</button>
+        </div>
+        <div class="row add-row">
+          <input id="symNew" type="text" placeholder="추가할 기호 (짝 기호는 「」처럼 둘 다)" maxlength="10" autocomplete="off" aria-label="추가할 기호">
+          <button type="button" id="symAdd" class="mini-btn">추가</button>
+        </div>
+        <button type="button" id="symReset" class="mini-btn reset">기본 기호로 되돌리기</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>
