@@ -3,6 +3,7 @@ import { countChars, fmt } from './count.js';
 import * as settings from './settings.js';
 import { askText, askConfirm } from './dialogs.js';
 import * as symbols from './symbols.js';
+import * as drive from './drive.js';
 
 const SAVE_DELAY = 300; // 입력이 멈추고 이만큼(ms) 지나면 기기에 저장
 
@@ -405,6 +406,45 @@ async function init() {
   // 브라우저가 공간이 모자랄 때 원고를 멋대로 지우지 않게 부탁해 둔다.
   navigator.storage?.persist?.();
 }
+
+// ───────── 구글 드라이브 연결 (설정 창) ─────────
+
+const driveStatus = $('#driveStatus');
+const driveBtn = $('#driveBtn');
+const driveMsg = $('#driveMsg');
+
+function renderDrive() {
+  if (drive.isSignedIn()) {
+    driveStatus.textContent = `연결됨 · ${drive.userEmail()}`;
+    driveBtn.textContent = '연결 끊기';
+  } else if (drive.wasConnected()) {
+    driveStatus.textContent = `다시 연결 필요 · ${drive.userEmail()}`;
+    driveBtn.textContent = '다시 연결';
+  } else {
+    driveStatus.textContent = '연결 안 됨';
+    driveBtn.textContent = '연결';
+  }
+}
+
+driveBtn.addEventListener('click', async () => {
+  driveMsg.textContent = '';
+  if (drive.isSignedIn()) {
+    drive.signOut();
+    return;
+  }
+  driveBtn.disabled = true;
+  try {
+    await drive.signIn();
+    await drive.ensureFolder();
+  } catch (err) {
+    driveMsg.textContent = err.message;
+  } finally {
+    driveBtn.disabled = false;
+    renderDrive();
+  }
+});
+drive.onChange(renderDrive);
+renderDrive();
 
 // 오프라인에서도 앱이 열리게 하는 서비스 워커 등록
 if ('serviceWorker' in navigator) {
