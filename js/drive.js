@@ -207,27 +207,24 @@ export async function ensureFolderIn(parent, name, knownId) {
   return created.id;
 }
 
-// 파일(PDF·txt 등)을 parent 폴더에 올린다. fileId가 있고 그 파일이 아직 있으면 내용을 바꾸고,
-// 이름이 달라졌거나 다른 폴더에 있으면 맞춰 준다. 올라간 파일의 ID를 돌려준다.
-export async function uploadFile({ name, parent, mimeType, blob, fileId }) {
-  if (fileId) {
-    try {
-      const meta = await call(`/files/${fileId}?fields=name,trashed,parents`);
-      if (!meta.trashed) {
-        await call(`/files/${fileId}?uploadType=media&fields=id`, {
-          base: UPLOAD,
-          method: 'PATCH',
-          headers: { 'Content-Type': mimeType },
-          body: blob,
-        });
-        const parents = meta.parents ?? [];
-        if (meta.name !== name || !parents.includes(parent)) await renameAndMove(fileId, name, parent, parents);
-        return fileId;
-      }
-    } catch (err) {
-      if (err.status !== 404) throw err;
-    }
+// 파일(PDF·txt 등)을 parent 폴더에 새로 올린다. oldId(전에 올린 파일)가 있으면 그건 휴지통으로 보낸다.
+// 기존 파일의 내용만 갈아 끼우면 드라이브 미리보기가 한동안 옛 내용을 보여줘서, 항상 새 파일로 바꿔치기한다.
+// 올라간 새 파일의 ID를 돌려준다.
+export async function uploadFile({ name, parent, mimeType, blob, fileId: oldId }) {
+  const newId = await createBinary({ name, parent, mimeType, blob });
+  if (oldId && oldId !== newId) {
+    await call(`/files/${oldId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ trashed: true }),
+    }).catch((err) => {
+      if (err.status !== 404) throw err; // 이미 없는 파일이면 넘어간다
+    });
   }
+  return newId;
+}
+
+async function createBinary({ name, parent, mimeType, blob }) {
   const boundary = 'jipil' + Date.now();
   const body = new Blob([
     `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify({ name, parents: [parent], mimeType })}\r\n`,
