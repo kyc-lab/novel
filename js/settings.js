@@ -12,6 +12,8 @@ const DEFAULTS = {
   countNewlines: false, // 줄바꿈을 글자수에 넣을지
   goal: 5500, // 회차 목표 글자수
   overlay: false, // 본문 위에 떠 있는 작은 글자수
+  aiProvider: 'openai', // AI 담당: 'openai'(GPT) / 'gemini' / 'claude'
+  aiModels: {}, // 회사별로 고른 모델 { openai: 'gpt-…' }. 비어 있으면 기본 모델
   symbols: ['⋯', '⋯⋯', '……', '…', '「」', '『』', '―', '·', '~', '“”', '‘’', '♡', '★', '《》'], // 기호 바
   // 말줄임표 모양: 'mid' ⋯ / 'low' …  — 점 세 개를 치면 한 개, 바로 하나 더 치면 두 개(⋯⋯)가 된다.
   ellipsisStyle: 'mid',

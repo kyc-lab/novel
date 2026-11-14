@@ -167,6 +167,30 @@
           <pre id="syncLog"></pre>
         </details>
 
+        <h3>AI <small>쓴 만큼 요금이 나가 · 키는 이 기기에만 저장</small></h3>
+        <div class="row">
+          <span>AI 담당</span>
+          <div class="seg">
+            <label><input type="radio" name="aiProvider" value="openai"><span>GPT</span></label>
+            <label title="준비 중"><input type="radio" name="aiProvider" value="gemini"><span>제미나이</span></label>
+            <label title="준비 중"><input type="radio" name="aiProvider" value="claude"><span>Claude</span></label>
+          </div>
+        </div>
+        <div class="row add-row">
+          <input id="aiKey" type="password" placeholder="API 키 붙여넣기" autocomplete="off" aria-label="API 키">
+          <button type="button" id="aiKeySave" class="mini-btn">저장</button>
+          <button type="button" id="aiKeyDel" class="mini-btn danger">지우기</button>
+        </div>
+        <p id="aiKeyState" class="hint"></p>
+        <div class="row">
+          <span>모델</span>
+          <select id="aiModel" class="pick" aria-label="AI 모델"></select>
+        </div>
+        <div class="row">
+          <span id="aiTestMsg" class="hint ai-msg">키를 넣은 다음 눌러봐.</span>
+          <button type="button" id="aiTest" class="mini-btn">연결 시험</button>
+        </div>
+
         <h3>본문 모양 <small>이 기기에만 적용</small></h3>
         <div class="row">
           <span>글자 크기</span>

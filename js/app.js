@@ -8,6 +8,7 @@ import * as sync from './sync.js';
 import * as history from './history.js';
 import { makeChapterPdf } from './pdf.js';
 import * as wiki from './wiki.js';
+import * as ai from './ai.js';
 
 const SAVE_DELAY = 300; // 입력이 멈추고 이만큼(ms) 지나면 기기에 저장
 
@@ -757,6 +758,10 @@ $('#btnSaveNow').addEventListener('click', async (e) => {
     refreshStatus();
   }
 });
+
+// 설정 창의 AI 칸(담당 회사, 키, 모델, 연결 시험)
+const aiPanel = ai.initPanel(el.settingsDlg);
+el.btnSettings.addEventListener('click', aiPanel.render);
 
 // 자동 변환 규칙을 바꾸면 드라이브에 올릴 게 생긴 것(다른 기기와 공유)
 settings.onSharedChange(() => markPending());

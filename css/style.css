@@ -625,6 +625,18 @@ body.mode-wiki .bottombar { display: none; }
   .cf-cols .doc { max-height: 26dvh; flex: none; }
 }
 
+/* ── 설정: AI ── */
+.pick {
+  max-width: 62%;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 7px 8px;
+}
+.seg input:disabled + span { opacity: .4; cursor: not-allowed; }
+.row .ai-msg { margin: 0; flex: 1; line-height: 1.5; padding: 6px 0; }
+.mini-btn[hidden] { display: none; }
+
 .log-box { margin-top: 8px; font-size: 13px; color: var(--muted); }
 .log-box summary { cursor: pointer; padding: 6px 0; }
 .log-box pre {
