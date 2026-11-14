@@ -15,6 +15,7 @@
 import * as db from './db.js';
 import * as drive from './drive.js';
 import * as history from './history.js';
+import * as settings from './settings.js';
 
 const UPLOAD = 'https://www.googleapis.com/upload/drive/v3';
 const CH_PREFIX = 'ch-';
@@ -103,6 +104,7 @@ export async function addTombstone(kind, id) {
 export async function hasPending() {
   const book = await getBook();
   if (book.worksDirty) return true;
+  if (settings.getShared().dirty) return true;
   for (const kind of KINDS) if ((await db.getAll(kind.store)).some((x) => x.dirty)) return true;
   return false;
 }
@@ -289,6 +291,56 @@ async function dropPristineWorks() {
   }
 }
 
+// ───────── 기기끼리 공유하는 설정 (자동 변환 규칙) — settings.json ─────────
+// 규칙은 통째로 "더 나중에 바꾼 쪽"을 따른다. 시각이 같은데 내용이 다르면(둘 다 예전부터 따로 고쳐 둔 경우) 합친다.
+
+const SETTINGS_FILE = 'settings.json';
+const sharedPayload = (s) => ({ rules: s.rules, ellipsisStyle: s.ellipsisStyle, smartQuotes: s.smartQuotes, updatedAt: s.updatedAt });
+const sharedSame = (a, b) =>
+  stable({ r: a.rules, e: a.ellipsisStyle, q: a.smartQuotes }) === stable({ r: b.rules, e: b.ellipsisStyle, q: b.smartQuotes });
+
+async function uploadShared(book, folder, data) {
+  const res = book.settingsId ? await updateFile(book.settingsId, data) : await createFile(folder, SETTINGS_FILE, data);
+  book.settingsId = res.id;
+  book.settingsVer = res.md5Checksum;
+  settings.markSharedUploaded(data.updatedAt);
+  log('올림 · 변환 규칙');
+}
+
+async function syncShared(book, folder, file) {
+  const mine = settings.getShared();
+  if (!file) {
+    book.settingsId = null;
+    await uploadShared(book, folder, sharedPayload(mine));
+    return;
+  }
+  book.settingsId = file.id;
+  if (file.md5Checksum === book.settingsVer) {
+    if (mine.dirty) await uploadShared(book, folder, sharedPayload(mine));
+    return;
+  }
+  const theirs = await download(file.id);
+  const theirAt = theirs.updatedAt ?? 0;
+  if (sharedSame(mine, theirs)) {
+    settings.applyShared({ ...theirs, updatedAt: Math.max(theirAt, mine.updatedAt) });
+    book.settingsVer = file.md5Checksum;
+  } else if (theirAt > mine.updatedAt && mine.updatedAt !== 1) {
+    // (시각 1 = 이 기능이 생기기 전에 이 기기에서 따로 고쳐 둔 규칙 → 덮어쓰지 않고 아래에서 합친다)
+    settings.applyShared(theirs);
+    book.settingsVer = file.md5Checksum;
+    log('받음 · 변환 규칙');
+  } else if (theirAt < mine.updatedAt) {
+    await uploadShared(book, folder, sharedPayload(mine));
+  } else {
+    // 어느 쪽이 나중인지 가릴 수 없음 → 합친다(이 기기 규칙 + 저쪽에만 있는 규칙)
+    const extra = (theirs.rules ?? []).filter((r) => !mine.rules.some((m) => m.from === r.from));
+    const merged = { ...sharedPayload(mine), rules: [...mine.rules, ...extra], updatedAt: Date.now() };
+    settings.applyShared(merged, { dirty: true });
+    await uploadShared(book, folder, sharedPayload(settings.getShared()));
+    log('합침 · 변환 규칙');
+  }
+}
+
 // ───────── 전체 동기화 (앱을 열 때 · 돌아올 때) ─────────
 // 부르는 쪽에서 원고 입력을 잠가 두고 부른다.
 
@@ -411,6 +463,9 @@ export async function syncAll() {
   }
   book.worksDirty = false;
 
+  // 4-2) 자동 변환 규칙 맞추기
+  await syncShared(book, folder, remote.get(SETTINGS_FILE));
+
   // 5) 마지막에 쓰던 자리
   const stateFile = remote.get('state.json');
   if (stateFile) {
@@ -456,6 +511,14 @@ export async function pushDirty(position) {
       }
     }
     await setBook(fresh);
+  }
+
+  // 자동 변환 규칙을 바꿨으면 올린다. 그 사이 다른 기기가 먼저 바꿨으면 전체 동기화에서 맞춘다.
+  if (settings.getShared().dirty) {
+    const book3 = await getBook();
+    if (book3.settingsId && (await currentVer(book3.settingsId)) !== book3.settingsVer) return { conflict: true, pushed };
+    await uploadShared(book3, folder, sharedPayload(settings.getShared()));
+    await setBook(book3);
   }
 
   if (position) {

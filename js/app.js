@@ -758,6 +758,9 @@ $('#btnSaveNow').addEventListener('click', async (e) => {
   }
 });
 
+// 자동 변환 규칙을 바꾸면 드라이브에 올릴 게 생긴 것(다른 기기와 공유)
+settings.onSharedChange(() => markPending());
+
 // ───────── 위키 화면 ─────────
 
 wiki.init({

@@ -49,8 +49,70 @@ export function update(patch) {
   } catch (err) {
     console.error(err);
   }
+  // 기기끼리 공유하는 항목(자동 변환 규칙)을 이 기기에서 바꿨으면 "드라이브에 올릴 것 있음"으로 표시
+  if (!applyingShared && SHARED_KEYS.some((k) => k in patch)) {
+    writeSharedMeta({ at: Date.now(), dirty: true });
+    sharedListeners.forEach((fn) => fn());
+  }
   apply();
   listeners.forEach((fn) => fn(current));
+}
+
+// ───────── 기기끼리 공유하는 설정: 자동 변환 규칙 ─────────
+// 나머지 설정(글자 크기·테마·기호 바 등)은 기기마다 따로다.
+
+const SHARED_KEYS = ['rules', 'ellipsisStyle', 'smartQuotes'];
+const SHARED_META = 'sharedSettingsMeta'; // { at: 마지막으로 바뀐 시각, dirty: 드라이브에 아직 안 올라감 }
+const sharedListeners = [];
+let applyingShared = false;
+
+export const onSharedChange = (fn) => sharedListeners.push(fn);
+
+function readSharedMeta() {
+  try {
+    return JSON.parse(localStorage.getItem(SHARED_META));
+  } catch {
+    return null;
+  }
+}
+const writeSharedMeta = (meta) => localStorage.setItem(SHARED_META, JSON.stringify(meta));
+const sharedIsDefault = () => SHARED_KEYS.every((k) => JSON.stringify(current[k]) === JSON.stringify(DEFAULTS[k]));
+
+// 공유 항목의 지금 값. 이 기능이 생기기 전에 규칙을 고쳐 둔 기기는 시각을 1로 본다
+// (한 번도 안 건드린 기기 0 보다는 새것, 기능이 생긴 뒤에 고친 것보다는 옛것).
+export function getShared() {
+  const meta = readSharedMeta();
+  return {
+    rules: current.rules,
+    ellipsisStyle: current.ellipsisStyle,
+    smartQuotes: current.smartQuotes,
+    updatedAt: meta?.at ?? (sharedIsDefault() ? 0 : 1),
+    dirty: meta?.dirty ?? !sharedIsDefault(),
+  };
+}
+
+// 드라이브에서 받은(또는 합친) 값을 이 기기에 적용한다.
+export function applyShared(data, { dirty = false } = {}) {
+  const patch = {};
+  if (Array.isArray(data.rules)) {
+    // 기본 규칙 두 개(말줄임표·줄표)는 빠져 있어도 항상 있게 한다.
+    const missing = DEFAULTS.rules.filter((d) => !data.rules.some((r) => r.id === d.id));
+    patch.rules = [...missing, ...data.rules];
+  }
+  if (data.ellipsisStyle in ELLIPSIS) patch.ellipsisStyle = data.ellipsisStyle;
+  if (typeof data.smartQuotes === 'boolean') patch.smartQuotes = data.smartQuotes;
+  applyingShared = true;
+  try {
+    update(patch);
+  } finally {
+    applyingShared = false;
+  }
+  writeSharedMeta({ at: data.updatedAt ?? 0, dirty });
+}
+
+// 드라이브에 올렸다고 표시한다(올리는 사이에 또 바꿨으면 그대로 둔다).
+export function markSharedUploaded(at) {
+  if (getShared().updatedAt === at) writeSharedMeta({ at, dirty: false });
 }
 
 // 설정값을 화면에 입힌다.
