@@ -907,3 +907,54 @@ body.ai-open #app { padding-right: 380px; }
 @media (max-width: 800px) {
   .editor-mirror { padding: 18px 16px 40vh; }
 }
+
+/* ── 폰 아래 바 ── */
+.mobile-nav, .nav-more { display: none; }
+.nav-order { list-style: none; margin: 6px 0; padding: 0; }
+.nav-order li { display: flex; align-items: center; gap: 6px; padding: 5px 0; border-bottom: 1px solid var(--line); }
+.nav-order li span { flex: 1; }
+.nav-order li.in-bar span { font-weight: 700; }
+.nav-order .mini-btn { padding: 4px 10px; }
+
+@media (max-width: 800px) {
+  :root { --nav-h: 56px; }
+  #app { height: calc(100dvh - var(--nav-h) - env(safe-area-inset-bottom)); }
+  .mobile-nav {
+    display: flex;
+    position: fixed; left: 0; right: 0; bottom: 0;
+    z-index: 7;
+    height: calc(var(--nav-h) + env(safe-area-inset-bottom));
+    padding-bottom: env(safe-area-inset-bottom);
+    background: var(--panel);
+    border-top: 1px solid var(--line);
+  }
+  .mobile-nav button { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; color: var(--muted); }
+  .mobile-nav .ico { font-size: 17px; line-height: 1; }
+  .mobile-nav .lbl { font-size: 11px; }
+  .mobile-nav button.on { color: var(--accent); }
+  .nav-more:not([hidden]) {
+    display: block;
+    position: fixed; inset: 0; z-index: 9;
+    background: rgba(0,0,0,.4);
+  }
+  .nav-more-list {
+    position: absolute; right: 8px;
+    bottom: calc(var(--nav-h) + env(safe-area-inset-bottom) + 8px);
+    min-width: 180px;
+    display: flex; flex-direction: column;
+    background: var(--panel-2);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    overflow: hidden;
+  }
+  .nav-more-list button { display: flex; align-items: center; gap: 12px; padding: 12px 16px; text-align: left; }
+  .nav-more-list button:hover { background: var(--line); }
+  .nav-more-list .ico { width: 1.2em; text-align: center; color: var(--accent); }
+  /* 아래 바가 있으니 위쪽 바에서는 뺀다 */
+  #btnMenu, #btnAi, #btnWiki, #btnSettings { display: none !important; }
+  .ai-panel { bottom: calc(var(--nav-h) + env(safe-area-inset-bottom)); }
+  .wiki { padding-bottom: 0; }
+  /* 원고를 쓰는 동안(키보드가 올라와 있을 때)은 아래 바를 숨겨서 자리를 넓힌다 */
+  body.typing .mobile-nav { display: none; }
+  body.typing #app { height: 100dvh; }
+}

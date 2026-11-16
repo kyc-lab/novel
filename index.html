@@ -98,6 +98,12 @@
     </footer>
   </div>
 
+  <!-- 폰·태블릿 세로: 아래 바 5칸 -->
+  <nav id="mobileNav" class="mobile-nav" aria-label="아래 바"></nav>
+  <div id="navMore" class="nav-more" hidden>
+    <div id="navMoreList" class="nav-more-list"></div>
+  </div>
+
   <!-- AI 패널: PC는 오른쪽, 폰은 아래에서 올라온다 -->
   <aside id="aiPanel" class="ai-panel" hidden>
     <div class="ai-panel-head">
@@ -322,6 +328,10 @@
           <span id="aiTestMsg" class="hint ai-msg">키를 넣은 다음 눌러봐.</span>
           <button type="button" id="aiTest" class="mini-btn">연결 시험</button>
         </div>
+
+        <h3>폰 아래 바 <small>위 4개가 아래 바, 나머지는 더보기 안으로</small></h3>
+        <ul id="navOrder" class="nav-order"></ul>
+        <button type="button" id="navOrderReset" class="mini-btn reset">기본 순서로 되돌리기</button>
 
         <h3>본문 모양 <small>이 기기에만 적용</small></h3>
         <div class="row">

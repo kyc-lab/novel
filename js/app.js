@@ -17,6 +17,7 @@ import * as hooks from './hooks.js';
 import * as draft from './draft.js';
 import * as lore from './lore.js';
 import * as aimarks from './aimarks.js';
+import * as nav from './nav.js';
 
 const SAVE_DELAY = 300; // 입력이 멈추고 이만큼(ms) 지나면 기기에 저장
 
@@ -885,6 +886,42 @@ $('#aiPanelClose').addEventListener('click', () => setAiPanel(false));
 
 // 본문 속 AI 문장 보라색 밑줄
 aimarks.init({ editor: el.editor, mirror: $('#editorMirror'), getChapter: currentChapter });
+
+// ───────── 폰 아래 바 ─────────
+
+const inWiki = () => document.body.classList.contains('mode-wiki');
+const navBar = nav.init({
+  isActive: (id) =>
+    id === 'chapters' ? el.sidebar.classList.contains('open') : id === 'wiki' ? inWiki() : aiPanelOpen() && currentTab === id,
+  async run(id) {
+    if (id === 'wiki') {
+      setAiPanel(false);
+      await setWikiMode(!inWiki());
+      return;
+    }
+    if (inWiki()) await setWikiMode(false);
+    if (id === 'chapters') {
+      setAiPanel(false);
+      openSidebar();
+      return;
+    }
+    if (aiPanelOpen() && currentTab === id) setAiPanel(false);
+    else setAiPanel(true, id);
+  },
+  openSettings: () => el.btnSettings.click(),
+});
+// 패널·위키·목록이 열리고 닫힐 때 아래 바의 불도 맞춘다
+new MutationObserver(() => navBar.render()).observe(document.body, { attributes: true, attributeFilter: ['class'] });
+new MutationObserver(() => navBar.render()).observe(el.sidebar, { attributes: true, attributeFilter: ['class'] });
+$('#aiTabs').addEventListener('click', () => navBar.render());
+
+// 폰에서 원고·위키를 쓰는 동안(키보드가 올라와 있을 때)은 아래 바를 숨긴다
+for (const box of [el.editor, $('#wikiBody'), $('#wikiTitle'), el.chapTitle]) {
+  box.addEventListener('focus', () => document.body.classList.add('typing'));
+  box.addEventListener('blur', () => setTimeout(() => {
+    if (!document.activeElement?.matches('#editor, #wikiBody, #wikiTitle, #chapTitle')) document.body.classList.remove('typing');
+  }, 150));
+}
 
 // 자동 변환 규칙을 바꾸면 드라이브에 올릴 게 생긴 것(다른 기기와 공유)
 settings.onSharedChange(() => markPending());
