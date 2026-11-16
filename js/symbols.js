@@ -43,6 +43,12 @@ function replaceRange(start, end, text) {
   applying = false;
 }
 
+// 다른 기능(맞춤법 고치기 등)이 본문을 바꿀 때 쓴다. 자동 변환이 끼어들지 않고, PC에서는 Ctrl+Z로 되돌릴 수 있다.
+export function replaceText(start, end, text) {
+  lastConv = null;
+  replaceRange(start, end, text);
+}
+
 function insertSymbol(sym) {
   const start = editor.selectionStart;
   const end = editor.selectionEnd;

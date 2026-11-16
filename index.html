@@ -21,6 +21,7 @@
         <span id="wikiLabel" class="wiki-label"></span>
       </div>
       <button id="btnWiki" class="text-btn" type="button" title="이 작품의 위키 열기">위키</button>
+      <button id="btnProof" class="text-btn" type="button" title="AI 맞춤법·문장 교정">맞춤법</button>
       <button id="saveStatus" class="save-status" type="button"></button>
       <span class="tb-break"></span>
       <button id="btnSaveNow" class="text-btn" type="button" title="지금 바로 드라이브에 올리기">임시저장</button>
@@ -93,6 +94,23 @@
       </div>
     </footer>
   </div>
+
+  <!-- AI 패널: PC는 오른쪽, 폰은 아래에서 올라온다 -->
+  <aside id="aiPanel" class="ai-panel" hidden>
+    <div class="ai-panel-head">
+      <h2>맞춤법 · 문장 교정</h2>
+      <button type="button" id="aiPanelClose" class="icon-btn" aria-label="닫기">✕</button>
+    </div>
+    <div class="ai-panel-body">
+      <div class="proof-top">
+        <p id="proofInfo" class="hint"></p>
+        <button type="button" id="proofRun" class="mini-btn primary">이 회차 검사하기</button>
+      </div>
+      <p id="proofSummary" class="proof-sum"></p>
+      <button type="button" id="proofFixAll" class="mini-btn" hidden>맞춤법·띄어쓰기 전부 고치기</button>
+      <ul id="proofList" class="proof-list"></ul>
+    </div>
+  </aside>
 
   <div id="backdrop" class="backdrop" hidden></div>
 

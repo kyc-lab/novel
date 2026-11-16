@@ -8,16 +8,17 @@ import * as settings from './settings.js';
 const KEYS = 'aiKeys'; // { openai: 'sk-…', … } — 이 기기에만
 const TIMEOUT = 120000;
 
-// 회사 목록. models = [모델 이름, 설명]. 모델 이름·가격은 2026-11 OpenAI 가격표 기준.
+// 회사 목록. models = [모델 이름, 설명, 입력 가격, 출력 가격] (가격은 100만 토큰당 달러).
+// 모델 이름·가격은 2026-11 OpenAI 가격표 기준. 바뀌면 여기만 고치면 된다.
 export const PROVIDERS = {
   openai: {
     name: 'GPT',
     ready: true,
     defaultModel: 'gpt-6.1-terra',
     models: [
-      ['gpt-6.1-terra', '균형 · 추천'],
-      ['gpt-6-luna', '가장 저렴'],
-      ['gpt-6.1-sol', '고급 · 비쌈'],
+      ['gpt-6.1-terra', '균형 · 추천', 1.0, 5.0],
+      ['gpt-6-luna', '가장 저렴', 0.1, 0.5],
+      ['gpt-6.1-sol', '고급 · 비쌈', 2.0, 10.0],
     ],
   },
   gemini: { name: '제미나이', ready: false, defaultModel: '', models: [] },
@@ -46,6 +47,16 @@ export function maskKey(provider) {
   const k = getKey(provider);
   return k ? `${k.slice(0, 5)}…${k.slice(-4)}` : '';
 }
+
+// 쓴 토큰으로 대략의 원화 비용을 계산한다. 가격을 모르는 모델이면 null.
+const KRW_PER_USD = 1400;
+export function estimateWon(provider, model, usage) {
+  const row = PROVIDERS[provider]?.models.find(([id]) => id === model);
+  if (!row) return null;
+  const usd = (usage.input * row[2] + usage.output * row[3]) / 1e6;
+  return usd * KRW_PER_USD;
+}
+export const fmtWon = (won) => (won == null ? '' : won < 1 ? '1원 미만' : `약 ${Math.round(won).toLocaleString('ko-KR')}원`);
 
 export const currentProvider = () => settings.get().aiProvider;
 export const currentModel = (provider = currentProvider()) =>
@@ -86,15 +97,26 @@ async function explain(res, providerName) {
 const openai = {
   headers: (key) => ({ Authorization: 'Bearer ' + key, 'Content-Type': 'application/json' }),
 
-  async ask({ key, model, system, user, json }) {
+  async ask({ key, model, system, user, json, effort }) {
     const body = { model, input: user };
     if (system) body.instructions = system;
     if (json) body.text = { format: { type: 'json_object' } };
-    const res = await request('https://api.openai.com/v1/responses', {
-      method: 'POST',
-      headers: this.headers(key),
-      body: JSON.stringify(body),
-    });
+    // 생각을 짧게 하라고 하면 빠르고 싸다. 모델이 이 옵션을 모르면 빼고 다시 보낸다.
+    if (effort) body.reasoning = { effort };
+    const send = () =>
+      request('https://api.openai.com/v1/responses', {
+        method: 'POST',
+        headers: this.headers(key),
+        body: JSON.stringify(body),
+      });
+    let res = await send();
+    if (res.status === 400 && body.reasoning) {
+      const text = await res.clone().text();
+      if (/reasoning|effort/i.test(text)) {
+        delete body.reasoning;
+        res = await send();
+      }
+    }
     if (!res.ok) throw new Error(await explain(res, 'GPT'));
     const data = await res.json();
     // 답은 여러 조각으로 온다. 글자 조각만 모은다.
@@ -122,14 +144,14 @@ const ADAPTERS = { openai };
 
 // AI에게 묻는다. { system: 역할·규칙, user: 내용, json: 답을 JSON으로 받을지 }
 // 돌려주는 것: { text, usage: { input, output }, provider, model }
-export async function ask({ system = '', user, json = false, provider = currentProvider(), model }) {
+export async function ask({ system = '', user, json = false, effort, provider = currentProvider(), model }) {
   const info = PROVIDERS[provider];
   const adapter = ADAPTERS[provider];
   if (!info?.ready || !adapter) throw new Error(`${info?.name ?? provider}는 아직 준비 중이야. 설정에서 다른 회사를 골라줘.`);
   const key = getKey(provider);
   if (!key) throw new Error(`${info.name} API 키가 없어. 설정에서 키를 넣어줘.`);
   const useModel = model || currentModel(provider);
-  const result = await adapter.ask({ key, model: useModel, system, user, json });
+  const result = await adapter.ask({ key, model: useModel, system, user, json, effort });
   return { ...result, provider, model: useModel };
 }
 
@@ -164,7 +186,7 @@ export function initPanel(dialog) {
 
     const chosen = currentModel(provider);
     const known = info.models.map(([id]) => id);
-    const options = info.models.map(([id, note]) => new Option(`${id} — ${note}`, id));
+    const options = info.models.map(([id, note, inP, outP]) => new Option(`${id} — ${note} ($${inP}/$${outP})`, id));
     for (const id of [chosen, ...extraModels]) {
       if (id && !known.includes(id)) {
         known.push(id);

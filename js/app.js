@@ -9,6 +9,7 @@ import * as history from './history.js';
 import { makeChapterPdf } from './pdf.js';
 import * as wiki from './wiki.js';
 import * as ai from './ai.js';
+import * as proof from './proof.js';
 
 const SAVE_DELAY = 300; // 입력이 멈추고 이만큼(ms) 지나면 기기에 저장
 
@@ -523,6 +524,7 @@ async function openChapter(id, restore) {
   renderChapters();
   updateCounts();
   refreshStatus();
+  if (!$('#aiPanel').hidden) proofPanel.render(); // 회차를 바꾸면 맞춤법 결과도 다시 그린다
   await saveCursor();
 }
 
@@ -762,6 +764,25 @@ $('#btnSaveNow').addEventListener('click', async (e) => {
 // 설정 창의 AI 칸(담당 회사, 키, 모델, 연결 시험)
 const aiPanel = ai.initPanel(el.settingsDlg);
 el.btnSettings.addEventListener('click', aiPanel.render);
+
+// ───────── AI 패널: 맞춤법·문장 교정 ─────────
+
+const proofPanel = proof.initPanel({
+  editor: el.editor,
+  getChapter: currentChapter,
+  isLocked: () => el.editor.readOnly,
+  beforeFix: async () => {
+    await flush();
+    await history.add(currentChapter(), '맞춤법 고치기 전');
+  },
+});
+function setAiPanel(open) {
+  $('#aiPanel').hidden = !open;
+  document.body.classList.toggle('ai-open', open);
+  if (open) proofPanel.render();
+}
+$('#btnProof').addEventListener('click', () => setAiPanel($('#aiPanel').hidden));
+$('#aiPanelClose').addEventListener('click', () => setAiPanel(false));
 
 // 자동 변환 규칙을 바꾸면 드라이브에 올릴 게 생긴 것(다른 기기와 공유)
 settings.onSharedChange(() => markPending());
