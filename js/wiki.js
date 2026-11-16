@@ -4,6 +4,7 @@
 
 import * as db from './db.js';
 import { askText, askConfirm } from './dialogs.js';
+import * as status from './status.js';
 
 const DEFAULT_CATS = ['인물', '장소', '세력', '설정', '사건', '기타'];
 const NEW_CAT = '__new__';
@@ -35,6 +36,18 @@ let current = null;
 let editing = false;
 let dirty = false;
 let saveTimer = null;
+let statusUpto = Infinity; // 상태 칸의 "N화 기준" (Infinity = 최신)
+
+// 지금 문서의 상태 기록을 바꿔서 바로 저장한다.
+async function saveStatus(list) {
+  await flush();
+  current.status = list;
+  current.updatedAt = Date.now();
+  current.dirty = true;
+  await db.put('wiki', current);
+  hooks.onChange();
+  renderView();
+}
 
 const findByTitle = (title) => docs.find((d) => d.title.trim() === title.trim());
 
@@ -161,6 +174,20 @@ function renderView() {
     p.textContent = '내용이 비어 있어. "고치기"를 눌러서 써 봐.';
     out.push(p);
   }
+  // 인물 문서(또는 상태 기록이 있는 문서)는 아래에 "상태" 칸을 붙인다.
+  if (current.category === '인물' || current.status?.length) {
+    out.push(
+      status.renderSection(current, {
+        upto: statusUpto,
+        onUpto: (n) => {
+          statusUpto = n;
+          renderView();
+        },
+        onAdd: (entry) => saveStatus([...(current.status ?? []), entry]),
+        onDelete: (id) => saveStatus((current.status ?? []).filter((e) => e.id !== id)),
+      }),
+    );
+  }
   el.view.replaceChildren(...out);
 }
 
@@ -190,6 +217,7 @@ function renderDoc() {
 async function select(id, { edit = false } = {}) {
   await flush();
   current = docs.find((d) => d.id === id) ?? null;
+  statusUpto = Infinity;
   editing = edit;
   if (current) await db.setMeta('wikiLast:' + workId, current.id);
   renderList();
@@ -302,6 +330,30 @@ export async function patch(id, fn) {
 }
 
 // 다른 기기에서 받아온 뒤 화면을 다시 맞춘다.
+// 위키 바깥(회차 완료 검토 등)에서 한 작품의 문서들을 고칠 때 쓴다.
+// fn(docs) 안에서 문서를 고치거나 새 문서를 배열에 넣고, 바뀐 문서 목록을 돌려준다.
+export async function mutate(targetWorkId, fn) {
+  await flush();
+  const open = targetWorkId === workId;
+  const list = open ? docs : await db.getWikiOf(targetWorkId);
+  const changed = fn(list, { newDoc: (props) => ({ id: uid(), workId: targetWorkId, title: '', category: '기타', body: '', status: [], createdAt: Date.now(), ...props }) });
+  for (const d of changed) {
+    if (!list.includes(d)) list.push(d);
+    d.updatedAt = Date.now();
+    d.dirty = true;
+    await db.put('wiki', d);
+  }
+  if (open && !el.root.hidden) {
+    renderList();
+    renderDoc();
+  }
+  if (changed.length) hooks.onChange();
+  return changed;
+}
+
+// 한 작품의 위키 문서들(읽기만)
+export const docsOf = async (targetWorkId) => (targetWorkId === workId ? docs : db.getWikiOf(targetWorkId));
+
 export async function reload() {
   if (!workId || dirty) return;
   docs = await db.getWikiOf(workId);

@@ -195,9 +195,12 @@ const KINDS = [
       updatedAt: ch.updatedAt,
       pdfId: ch.pdfId ?? null, // 회차 완료 때 올린 PDF 파일 번호(다른 기기에서 다시 완료해도 같은 파일을 고치게)
       txtId: ch.txtId ?? null, // 같이 올린 원문(txt) 파일 번호
+      summary: ch.summary ?? '', // 회차 완료 검토에서 작가가 확정한 줄거리 요약
+      review: ch.review ?? null, // 'done'(검토함) / 'later'(나중에 검토)
     }),
     same: (a, b) =>
-      a.body === b.body && a.title === b.title && !!a.done === !!b.done && a.order === b.order && a.workId === b.workId,
+      a.body === b.body && a.title === b.title && !!a.done === !!b.done && a.order === b.order && a.workId === b.workId &&
+      (a.summary ?? '') === (b.summary ?? '') && (a.review ?? null) === (b.review ?? null),
   },
   {
     name: '위키',
@@ -211,10 +214,13 @@ const KINDS = [
       title: d.title,
       category: d.category,
       body: d.body,
+      status: d.status ?? [], // 인물 상태 기록(설정집)
       createdAt: d.createdAt,
       updatedAt: d.updatedAt,
     }),
-    same: (a, b) => a.body === b.body && a.title === b.title && a.category === b.category && a.workId === b.workId,
+    same: (a, b) =>
+      a.body === b.body && a.title === b.title && a.category === b.category && a.workId === b.workId &&
+      JSON.stringify(a.status ?? []) === JSON.stringify(b.status ?? []),
   },
 ];
 

@@ -153,6 +153,40 @@
     </div>
   </dialog>
 
+  <!-- 회차 완료 검토 창 -->
+  <dialog id="reviewDlg" class="sheet wide review">
+    <div class="sheet-head"><h2 id="rvTitle"></h2></div>
+    <div class="rv-body">
+      <div id="rvStart">
+        <p id="rvWhere" class="hint"></p>
+        <p id="rvAiHint" class="rv-lead"></p>
+        <div class="rv-btns">
+          <button type="button" id="rvCancel" class="mini-btn">취소</button>
+          <button type="button" id="rvPlain" class="mini-btn">AI 없이 완료 (PDF만)</button>
+          <button type="button" id="rvAi" class="mini-btn primary">AI 검토하고 완료</button>
+        </div>
+      </div>
+      <div id="rvWait" hidden>
+        <p class="rv-lead">AI가 원고를 읽고 정리하는 중이야. 30초쯤 걸릴 수 있어.</p>
+      </div>
+      <div id="rvEdit" hidden>
+        <h3>줄거리 요약 <small>직접 고쳐도 돼</small></h3>
+        <textarea id="rvSummary" rows="5"></textarea>
+        <h3>인물 상태 변화 <small>체크한 것만 위키 인물 문서에 반영</small></h3>
+        <datalist id="rvNames"></datalist>
+        <ul id="rvChanges" class="rv-list"></ul>
+        <h3>새 떡밥 후보 <small>체크한 것만 위키 "떡밥" 문서로</small></h3>
+        <ul id="rvHooks" class="rv-list"></ul>
+        <p id="rvCost" class="hint"></p>
+        <div class="rv-btns">
+          <button type="button" id="rvCancel2" class="mini-btn">취소</button>
+          <button type="button" id="rvLater" class="mini-btn" title="반영하지 않고 PDF만 저장, 나중에 다시 검토">나중에 검토</button>
+          <button type="button" id="rvApply" class="mini-btn primary">반영하고 완료</button>
+        </div>
+      </div>
+    </div>
+  </dialog>
+
   <!-- 물어보기 창 (이름 입력, 삭제 확인) -->
   <dialog id="askDlg" class="sheet ask">
     <form method="dialog">

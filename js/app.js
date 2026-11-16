@@ -10,6 +10,7 @@ import { makeChapterPdf } from './pdf.js';
 import * as wiki from './wiki.js';
 import * as ai from './ai.js';
 import * as proof from './proof.js';
+import * as review from './review.js';
 
 const SAVE_DELAY = 300; // 입력이 멈추고 이만큼(ms) 지나면 기기에 저장
 
@@ -528,6 +529,9 @@ async function openChapter(id, restore) {
   await saveCursor();
 }
 
+// 회차 목록 둘째 줄: 글자수(+ 검토 안 한 완료 회차면 표시)
+const chapterLine2 = (ch) => fmt(mainCount(ch.body)) + '자' + (ch.done && ch.review === 'later' ? ' · 검토 전' : '');
+
 function renderChapters() {
   el.chapList.replaceChildren(
     ...state.chapters.map((ch, i) => {
@@ -549,7 +553,8 @@ function renderChapters() {
       line1.append(no, title);
       const line2 = document.createElement('span');
       line2.className = 'line2';
-      line2.textContent = fmt(mainCount(ch.body)) + '자';
+      line2.textContent = chapterLine2(ch);
+      if (ch.summary) open.title = `요약: ${ch.summary}`; // 마우스를 올리면 검토한 요약이 보인다
       open.append(line1, line2);
 
       const done = document.createElement('button');
@@ -576,7 +581,7 @@ function updateListItem(ch) {
   const li = el.chapList.querySelector(`[data-id="${ch.id}"]`);
   if (!li) return;
   li.querySelector('.title').textContent = ch.title || '제목 없음';
-  li.querySelector('.line2').textContent = fmt(mainCount(ch.body)) + '자';
+  li.querySelector('.line2').textContent = chapterLine2(ch);
 }
 
 async function onChapterClick(e) {
@@ -838,17 +843,33 @@ $('#btnDone').addEventListener('click', async (e) => {
     return;
   }
   const online = navigator.onLine && drive.wasConnected();
-  const ok = await askConfirm(
-    `${no}화 「${ch.title || '제목 없음'}」(${countLabel(ch.body)}자)를 완료할까?\n\n` +
-      (online
-        ? `PDF와 원문(txt)을 드라이브의 "집필 앱 › 완료 회차 › ${safeName(work.title)}" 폴더에 저장해.`
-        : '지금은 드라이브에 연결돼 있지 않아서, PDF와 원문(txt)을 이 기기에 내려받아.'),
-    '회차 완료',
-  );
-  if (!ok) return;
+  const allDocs = await wiki.docsOf(work.id);
+  const choice = await review.open({
+    no,
+    title: ch.title,
+    chars: countLabel(ch.body),
+    body: ch.body,
+    persons: allDocs.filter((d) => d.category === '인물'),
+    prevSummary: state.chapters[no - 2]?.summary ?? '',
+    saveWhere: online
+      ? `PDF와 원문(txt)을 드라이브의 "집필 앱 › 완료 회차 › ${safeName(work.title)}" 폴더에 저장해.`
+      : '드라이브에 연결돼 있지 않아서 PDF와 원문(txt)을 이 기기에 내려받아.',
+  });
+  if (!choice) return;
 
   btn.disabled = true;
   try {
+    // 검토 결과 반영(요약은 회차에, 인물 상태·떡밥은 위키에)
+    if (choice.mode === 'apply') {
+      ch.summary = choice.summary;
+      ch.review = 'done';
+      const changed = await wiki.mutate(work.id, (docs, tools) =>
+        review.applyToWiki(docs, tools, { chapterId: ch.id, no, changes: choice.changes, hooks: choice.hooks }),
+      );
+      sync.log(`회차 완료 검토 반영: 인물 상태 ${choice.changes.length}개, 떡밥 ${choice.hooks.length}개, 위키 문서 ${changed.length}개`);
+    } else if (choice.mode === 'later') {
+      ch.review = 'later';
+    }
     setNotice('PDF 만드는 중…', 60000);
     const { blob, pages } = await makeChapterPdf({
       workTitle: work.title,
@@ -892,7 +913,8 @@ $('#btnDone').addEventListener('click', async (e) => {
     await history.add(ch, '회차 완료');
     renderChapters();
     markPending();
-    setNotice(`회차 완료 · PDF ${pages}쪽 + 원문 ${where}`, 6000);
+    const reviewed = choice.mode === 'apply' ? ' · 검토 반영' : choice.mode === 'later' ? ' · 검토는 나중에' : '';
+    setNotice(`회차 완료 · PDF ${pages}쪽 + 원문 ${where}${reviewed}`, 6000);
     pushNow();
   } catch (err) {
     console.error(err);
