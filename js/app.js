@@ -11,6 +11,12 @@ import * as wiki from './wiki.js';
 import * as ai from './ai.js';
 import * as proof from './proof.js';
 import * as review from './review.js';
+import * as ask from './ask.js';
+import * as check from './check.js';
+import * as hooks from './hooks.js';
+import * as draft from './draft.js';
+import * as lore from './lore.js';
+import * as aimarks from './aimarks.js';
 
 const SAVE_DELAY = 300; // 입력이 멈추고 이만큼(ms) 지나면 기기에 저장
 
@@ -338,6 +344,7 @@ async function reloadFromDb(res) {
     const pos = Math.min(cursor, ch.body.length);
     el.editor.setSelectionRange(pos, pos);
     el.editor.scrollTop = scroll;
+    aimarks.reset();
   }
   el.chapTitle.value = ch.title;
   el.chapNum.textContent = state.chapters.indexOf(ch) + 1 + '화';
@@ -399,6 +406,7 @@ $('#btnHistory').addEventListener('click', async () => {
       el.editor.value = item.body;
       el.chapTitle.value = item.title;
       el.editor.setSelectionRange(item.body.length, item.body.length);
+      aimarks.reset({ clear: true }); // 되돌린 글에는 AI 표시를 지운다
       updateCounts();
       scheduleSave();
     },
@@ -525,7 +533,8 @@ async function openChapter(id, restore) {
   renderChapters();
   updateCounts();
   refreshStatus();
-  if (!$('#aiPanel').hidden) proofPanel.render(); // 회차를 바꾸면 맞춤법 결과도 다시 그린다
+  aimarks.reset(); // 이 회차의 AI 문장 밑줄
+  if (aiPanelOpen()) panes[currentTab].render(); // 회차를 바꾸면 AI 패널도 다시 그린다
   await saveCursor();
 }
 
@@ -781,13 +790,101 @@ const proofPanel = proof.initPanel({
     await history.add(currentChapter(), '맞춤법 고치기 전');
   },
 });
-function setAiPanel(open) {
+// AI 기능들이 같이 쓰는 도우미
+const aiCtx = {
+  editor: el.editor,
+  chapters: () => state.chapters,
+  chapter: currentChapter,
+  noOf: (ch) => (ch ? state.chapters.indexOf(ch) + 1 : 0),
+  wikiDocs: () => wiki.docsOf(state.workId),
+  mutateWiki: (fn) => wiki.mutate(state.workId, fn),
+  async openChapterNo(no) {
+    const ch = state.chapters[no - 1];
+    if (ch && ch.id !== state.chapterId) await openChapter(ch.id);
+  },
+  async openWikiDoc(id) {
+    await setWikiMode(true);
+    await wiki.show(id);
+  },
+  // 원고에서 그 글자를 찾아 선택하고 그 자리로 스크롤
+  goToText(text) {
+    const at = el.editor.value.indexOf(text);
+    if (at < 0) return false;
+    el.editor.focus();
+    el.editor.setSelectionRange(at, at + text.length);
+    const lines = el.editor.value.slice(0, at).split('\n').length;
+    const lineH = parseFloat(getComputedStyle(el.editor).lineHeight) || 30;
+    el.editor.scrollTop = Math.max(0, lines * lineH - el.editor.clientHeight / 2);
+    return true;
+  },
+  // 회차에 정보(점검 결과 등)를 붙여 저장
+  async updateChapter(ch, patch) {
+    await flush();
+    Object.assign(ch, patch, { updatedAt: Date.now(), dirty: true });
+    await db.put('chapters', ch);
+    markPending();
+  },
+  // AI 초안을 커서 자리에 넣고 보라색 밑줄로 표시
+  insertAiText(text) {
+    if (el.editor.readOnly) return;
+    const at = el.editor.selectionStart ?? el.editor.value.length;
+    const before = el.editor.value.slice(0, at);
+    const lead = before && !before.endsWith('\n') ? '\n\n' : '';
+    symbols.replaceText(at, el.editor.selectionEnd ?? at, lead + text);
+    aimarks.add(at + lead.length, at + lead.length + text.length);
+    scheduleSave();
+  },
+};
+
+const panes = {
+  lore: lore.initPane(aiCtx),
+  draft: draft.initPane(aiCtx),
+  ask: ask.initPane(aiCtx),
+  proof: proofPanel,
+  check: check.initPane(aiCtx),
+  hooks: hooks.initPane(aiCtx, {
+    onBadge(n) {
+      const tab = $('#aiTabs [data-tab="hooks"]');
+      tab.replaceChildren('떡밥');
+      if (n) tab.append(Object.assign(document.createElement('span'), { className: 'badge', textContent: n }));
+    },
+  }),
+};
+let currentTab = (() => {
+  try {
+    return localStorage.getItem('aiTab') || 'ask';
+  } catch {
+    return 'ask';
+  }
+})();
+if (!panes[currentTab]) currentTab = 'ask';
+
+function showTab(tab) {
+  currentTab = tab;
+  try {
+    localStorage.setItem('aiTab', tab);
+  } catch {
+    // 기억 못 해도 괜찮다
+  }
+  for (const b of document.querySelectorAll('#aiTabs [data-tab]')) b.classList.toggle('on', b.dataset.tab === tab);
+  for (const s of document.querySelectorAll('#aiPanel [data-pane]')) s.hidden = s.dataset.pane !== tab;
+  panes[tab].render();
+}
+const aiPanelOpen = () => !$('#aiPanel').hidden;
+function setAiPanel(open, tab = currentTab) {
   $('#aiPanel').hidden = !open;
   document.body.classList.toggle('ai-open', open);
-  if (open) proofPanel.render();
+  if (open) showTab(tab);
 }
-$('#btnProof').addEventListener('click', () => setAiPanel($('#aiPanel').hidden));
+$('#aiTabs').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-tab]');
+  if (b) showTab(b.dataset.tab);
+});
+$('#btnAi').addEventListener('click', () => setAiPanel(!aiPanelOpen()));
 $('#aiPanelClose').addEventListener('click', () => setAiPanel(false));
+
+// 본문 속 AI 문장 보라색 밑줄
+aimarks.init({ editor: el.editor, mirror: $('#editorMirror'), getChapter: currentChapter });
 
 // 자동 변환 규칙을 바꾸면 드라이브에 올릴 게 생긴 것(다른 기기와 공유)
 settings.onSharedChange(() => markPending());

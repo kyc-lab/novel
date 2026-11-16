@@ -470,7 +470,7 @@ body.mode-wiki .chap-num,
 body.mode-wiki .chap-title,
 body.mode-wiki #btnMenu,
 body.mode-wiki #btnDone,
-body.mode-wiki #btnProof,
+body.mode-wiki #btnAi,
 body.mode-wiki .ai-panel,
 body.mode-wiki #btnHistory,
 body.mode-wiki #btnFocus,
@@ -800,4 +800,110 @@ body.ai-open #app { padding-right: 380px; }
     border-bottom: 0;
   }
   .sheet-body { padding-bottom: calc(20px + env(safe-area-inset-bottom)); }
+}
+
+/* ── AI 패널 탭 ── */
+.ai-tabs { display: flex; gap: 2px; overflow-x: auto; scrollbar-width: none; flex: 1; min-width: 0; }
+.ai-tabs::-webkit-scrollbar { display: none; }
+.ai-tabs button {
+  flex: none;
+  padding: 7px 10px;
+  border-radius: 8px;
+  font-size: 14px;
+  color: var(--muted);
+}
+.ai-tabs button:hover { background: var(--panel-2); }
+.ai-tabs button.on { color: var(--text); font-weight: 700; background: var(--panel-2); box-shadow: inset 0 -2px 0 var(--accent); }
+.ai-tabs button .badge { margin-left: 4px; padding: 0 5px; border-radius: 999px; background: #E0A458; color: #17181B; font-size: 11px; font-weight: 700; }
+.ai-panel-head { gap: 4px; padding-left: 8px; }
+.ai-panel-body section[hidden] { display: none; }
+.pane-input {
+  width: 100%;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 8px;
+  line-height: 1.6;
+  resize: vertical;
+  margin: 4px 0;
+}
+.pane-input:focus { outline: none; border-color: var(--accent); }
+.pane-h { margin: 22px 0 6px; font-size: 14px; color: var(--accent); }
+.pane-details { margin: 8px 0; }
+.pane-details summary { cursor: pointer; color: var(--muted); font-size: 13px; padding: 4px 0; }
+.row input.num {
+  width: 70px;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 6px 8px;
+  text-align: right;
+}
+
+/* 설정집(빠른 찾기) */
+.lore-list { list-style: none; margin: 6px 0; padding: 0; }
+.lore-list button { width: 100%; text-align: left; padding: 7px 8px; border-radius: 8px; display: flex; gap: 8px; }
+.lore-list button:hover { background: var(--panel-2); }
+.lore-list .cat { color: var(--accent); font-size: 12px; flex: none; width: 3.5em; }
+.lore-doc { border-top: 1px solid var(--line); margin-top: 8px; padding-top: 8px; }
+.lore-doc h3 { margin: 4px 0 8px; font-size: 17px; }
+.lore-doc .body { white-space: pre-wrap; font-family: var(--body-font); line-height: 1.7; font-size: 14px; }
+.lore-doc .st-now { margin-top: 10px; font-size: 13px; }
+
+/* 원고 질문 */
+.ask-log { list-style: none; margin: 8px 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.ask-log .q { align-self: flex-end; max-width: 85%; background: var(--panel-2); border-radius: 10px 10px 2px 10px; padding: 8px 10px; }
+.ask-log .a { border: 1px solid var(--line); border-radius: 10px 10px 10px 2px; padding: 8px 10px; line-height: 1.7; white-space: pre-wrap; }
+.ask-log .a.err { color: var(--danger); }
+.ask-log .links { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.ask-log .meta { color: var(--muted); font-size: 12px; margin-top: 4px; }
+.ask-input { display: flex; gap: 6px; align-items: flex-end; position: sticky; bottom: -20px; background: var(--panel); padding: 6px 0; }
+.ask-input textarea { flex: 1; background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; padding: 8px; resize: vertical; }
+
+/* 점검 */
+.grade { flex: none; font-weight: 700; font-size: 15px; }
+.grade.g0 { color: var(--accent); }
+.grade.g1 { color: #E0A458; }
+.grade.g2 { color: var(--danger); }
+.check-quotes { display: flex; flex-direction: column; gap: 4px; margin-top: 6px; }
+.check-quotes button { text-align: left; font-family: var(--body-font); font-size: 13px; color: var(--muted); border-left: 2px solid var(--line); padding-left: 8px; }
+.check-quotes button:hover { color: var(--text); border-color: var(--accent); }
+.proof-item select { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 3px 4px; }
+
+/* 떡밥 장부 */
+.hook-alert { margin: 0 0 10px; padding: 8px 10px; border-radius: 8px; background: #E0A45822; color: #E0A458; font-size: 13px; }
+.hook-alert[hidden] { display: none; }
+.hook-filter { margin-bottom: 8px; width: max-content; }
+.proof-item.hook-old { border-color: #E0A458; }
+.proof-item.hook-done { opacity: .6; }
+
+/* 초안 */
+.draft-list { list-style: none; margin: 12px 0 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.draft-card { border: 1px solid var(--line); border-radius: 10px; padding: 10px; background: var(--panel-2); }
+.draft-card .meta { color: var(--muted); font-size: 12px; margin-bottom: 6px; }
+.draft-card .text { max-height: 40dvh; overflow-y: auto; white-space: pre-wrap; font-family: var(--body-font); line-height: 1.8; font-size: 14px; }
+
+/* 본문 속 AI 문장 표시(보라색 밑줄) — 원고 칸 뒤에 같은 글을 깔고 밑줄만 보이게 한다 */
+.editor-box { position: relative; width: 100%; max-width: 760px; height: 100%; }
+.editor-box .editor { position: relative; z-index: 1; max-width: none; }
+.editor-mirror {
+  position: absolute; inset: 0;
+  overflow-y: scroll;
+  scrollbar-color: transparent transparent;
+  pointer-events: none;
+  color: transparent;
+  white-space: pre-wrap;
+  padding: 28px 24px 40vh;
+  font-family: var(--body-font);
+  font-size: var(--body-size);
+  line-height: var(--body-line);
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+}
+.editor-mirror::-webkit-scrollbar { background: transparent; }
+.editor-mirror::-webkit-scrollbar-thumb { background: transparent; }
+.editor-mirror mark { background: none; color: transparent; text-decoration: underline 2px #A78BFA; text-underline-offset: 5px; }
+.editor-mirror[hidden] { display: none; }
+@media (max-width: 800px) {
+  .editor-mirror { padding: 18px 16px 40vh; }
 }

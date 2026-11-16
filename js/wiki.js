@@ -361,3 +361,6 @@ export async function reload() {
   renderList();
   renderDoc();
 }
+
+// 바깥에서 특정 문서를 열 때(떡밥 장부·설정집의 "위키에서 보기")
+export const show = (id) => select(id);

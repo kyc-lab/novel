@@ -215,7 +215,8 @@ export function applyToWiki(docs, { newDoc }, { chapterId, no, changes, hooks })
   }
   for (const x of hooks) {
     if (findDoc(x.title, '떡밥')) continue;
-    const doc = newDoc({ title: x.title, category: '떡밥', body: `${x.detail}\n\n- 처음 나온 곳: ${no}화\n- 회수: 아직` });
+    // 떡밥 장부가 읽는 정보는 hook 에. 본문에는 설명만.
+    const doc = newDoc({ title: x.title, category: '떡밥', body: x.detail, hook: { first: no, resolved: null } });
     docs.push(doc);
     changed.add(doc);
   }

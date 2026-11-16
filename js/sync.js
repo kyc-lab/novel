@@ -197,10 +197,13 @@ const KINDS = [
       txtId: ch.txtId ?? null, // 같이 올린 원문(txt) 파일 번호
       summary: ch.summary ?? '', // 회차 완료 검토에서 작가가 확정한 줄거리 요약
       review: ch.review ?? null, // 'done'(검토함) / 'later'(나중에 검토)
+      check: ch.check ?? null, // 작가가 확정한 점검 결과
+      aiMarks: ch.aiMarks ?? [], // 본문 속 AI 문장 위치(보라색 밑줄)
     }),
     same: (a, b) =>
       a.body === b.body && a.title === b.title && !!a.done === !!b.done && a.order === b.order && a.workId === b.workId &&
-      (a.summary ?? '') === (b.summary ?? '') && (a.review ?? null) === (b.review ?? null),
+      (a.summary ?? '') === (b.summary ?? '') && (a.review ?? null) === (b.review ?? null) &&
+      JSON.stringify(a.check ?? null) === JSON.stringify(b.check ?? null) && JSON.stringify(a.aiMarks ?? []) === JSON.stringify(b.aiMarks ?? []),
   },
   {
     name: '위키',
@@ -215,12 +218,13 @@ const KINDS = [
       category: d.category,
       body: d.body,
       status: d.status ?? [], // 인물 상태 기록(설정집)
+      hook: d.hook ?? null, // 떡밥 문서면 { first, resolved }
       createdAt: d.createdAt,
       updatedAt: d.updatedAt,
     }),
     same: (a, b) =>
       a.body === b.body && a.title === b.title && a.category === b.category && a.workId === b.workId &&
-      JSON.stringify(a.status ?? []) === JSON.stringify(b.status ?? []),
+      JSON.stringify(a.status ?? []) === JSON.stringify(b.status ?? []) && JSON.stringify(a.hook ?? null) === JSON.stringify(b.hook ?? null),
   },
 ];
 

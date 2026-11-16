@@ -21,7 +21,7 @@
         <span id="wikiLabel" class="wiki-label"></span>
       </div>
       <button id="btnWiki" class="text-btn" type="button" title="이 작품의 위키 열기">위키</button>
-      <button id="btnProof" class="text-btn" type="button" title="AI 맞춤법·문장 교정">맞춤법</button>
+      <button id="btnAi" class="text-btn" type="button" title="설정집·초안·질문·맞춤법·점검·떡밥">AI</button>
       <button id="saveStatus" class="save-status" type="button"></button>
       <span class="tb-break"></span>
       <button id="btnSaveNow" class="text-btn" type="button" title="지금 바로 드라이브에 올리기">임시저장</button>
@@ -51,7 +51,10 @@
 
     <!-- 가운데: 원고 -->
     <main class="editor-wrap">
-      <textarea id="editor" class="editor" placeholder="여기에 원고를 쓰세요." spellcheck="false"></textarea>
+      <div class="editor-box">
+        <div id="editorMirror" class="editor-mirror" aria-hidden="true" hidden></div>
+        <textarea id="editor" class="editor" placeholder="여기에 원고를 쓰세요." spellcheck="false"></textarea>
+      </div>
     </main>
 
     <!-- 위키: "위키" 버튼을 누르면 원고 화면 대신 이게 보인다 -->
@@ -98,17 +101,94 @@
   <!-- AI 패널: PC는 오른쪽, 폰은 아래에서 올라온다 -->
   <aside id="aiPanel" class="ai-panel" hidden>
     <div class="ai-panel-head">
-      <h2>맞춤법 · 문장 교정</h2>
+      <nav class="ai-tabs" id="aiTabs">
+        <button type="button" data-tab="lore">설정집</button>
+        <button type="button" data-tab="draft">초안</button>
+        <button type="button" data-tab="ask">질문</button>
+        <button type="button" data-tab="proof">맞춤법</button>
+        <button type="button" data-tab="check">점검</button>
+        <button type="button" data-tab="hooks">떡밥</button>
+      </nav>
       <button type="button" id="aiPanelClose" class="icon-btn" aria-label="닫기">✕</button>
     </div>
     <div class="ai-panel-body">
-      <div class="proof-top">
-        <p id="proofInfo" class="hint"></p>
-        <button type="button" id="proofRun" class="mini-btn primary">이 회차 검사하기</button>
-      </div>
-      <p id="proofSummary" class="proof-sum"></p>
-      <button type="button" id="proofFixAll" class="mini-btn" hidden>맞춤법·띄어쓰기 전부 고치기</button>
-      <ul id="proofList" class="proof-list"></ul>
+      <!-- 설정집: 원고를 쓰다가 위키를 빠르게 찾아보기 -->
+      <section data-pane="lore" hidden>
+        <input id="loreSearch" class="pane-input" type="search" placeholder="위키에서 찾기 (인물·장소·설정…)" autocomplete="off">
+        <ul id="loreList" class="lore-list"></ul>
+        <div id="loreDoc" class="lore-doc" hidden></div>
+      </section>
+
+      <!-- 초안 쓰기 -->
+      <section data-pane="draft" hidden>
+        <textarea id="draftSyn" class="pane-input" rows="6" placeholder="시놉 / 장면 뼈대를 써줘.&#10;예: 철수가 북문에서 흑룡단 척후와 마주친다. 회귀 전 기억으로 함정을 피하고, 마지막에 영희의 목소리가 들린다."></textarea>
+        <div class="row"><span>문체 기준 회차</span><select id="draftStyle" class="pick"></select></div>
+        <label class="row"><span>쇠맛 금지 목록 적용</span><input type="checkbox" id="draftNoSoe" class="switch" checked></label>
+        <div class="row"><span>쓸 AI</span><select id="draftProvider" class="pick"></select></div>
+        <div class="proof-top"><p id="draftInfo" class="hint"></p><button type="button" id="draftGo" class="mini-btn primary">초안 쓰기</button></div>
+        <ul id="draftList" class="draft-list"></ul>
+      </section>
+
+      <!-- 원고 질문 -->
+      <section data-pane="ask" hidden>
+        <p id="askInfo" class="hint">요약·위키를 먼저 보고, 필요하면 해당 회차 원문만 읽어서 답해.</p>
+        <ul id="askLog" class="ask-log"></ul>
+        <div class="ask-input">
+          <textarea id="askQ" rows="2" placeholder="예: 철수 몇 화에서 죽었지?"></textarea>
+          <button type="button" id="askGo" class="mini-btn primary">묻기</button>
+        </div>
+      </section>
+
+      <!-- 맞춤법 · 문장 교정 -->
+      <section data-pane="proof" hidden>
+        <div class="proof-top">
+          <p id="proofInfo" class="hint"></p>
+          <button type="button" id="proofRun" class="mini-btn primary">이 회차 검사하기</button>
+        </div>
+        <p id="proofSummary" class="proof-sum"></p>
+        <button type="button" id="proofFixAll" class="mini-btn" hidden>맞춤법·띄어쓰기 전부 고치기</button>
+        <ul id="proofList" class="proof-list"></ul>
+      </section>
+
+      <!-- 점검: 체크리스트(쇠맛 점검 포함) + 설정 충돌 -->
+      <section data-pane="check" hidden>
+        <div class="proof-top">
+          <p id="checkInfo" class="hint"></p>
+          <button type="button" id="checkRun" class="mini-btn primary">이 회차 점검</button>
+        </div>
+        <details class="pane-details">
+          <summary>점검 항목 편집</summary>
+          <textarea id="checkItems" class="pane-input" rows="6"></textarea>
+          <p class="hint">한 줄에 하나. "쇠맛 점검"이 들어 있으면 AI 특유 문체를 위치와 함께 찾아.</p>
+        </details>
+        <p id="checkSum" class="proof-sum"></p>
+        <ul id="checkList" class="proof-list"></ul>
+        <h3 class="pane-h">설정 충돌</h3>
+        <div class="proof-top">
+          <p class="hint">요약·인물 상태와 이 회차가 어긋나는 곳을 찾아.</p>
+          <button type="button" id="conflictRun" class="mini-btn">충돌 찾기</button>
+        </div>
+        <p id="conflictSum" class="proof-sum"></p>
+        <ul id="conflictList" class="proof-list"></ul>
+      </section>
+
+      <!-- 떡밥 장부 -->
+      <section data-pane="hooks" hidden>
+        <p id="hookAlert" class="hook-alert" hidden></p>
+        <div class="seg hook-filter" id="hookFilter">
+          <label><input type="radio" name="hookFilter" value="open" checked><span>열림</span></label>
+          <label><input type="radio" name="hookFilter" value="done"><span>회수됨</span></label>
+          <label><input type="radio" name="hookFilter" value="all"><span>전체</span></label>
+        </div>
+        <ul id="hookList" class="proof-list"></ul>
+        <details class="pane-details">
+          <summary>＋ 떡밥 직접 추가</summary>
+          <input id="hookTitle" class="pane-input" type="text" placeholder="떡밥 이름 (예: 검신의 문양)" autocomplete="off">
+          <textarea id="hookDetail" class="pane-input" rows="2" placeholder="내용"></textarea>
+          <button type="button" id="hookAdd" class="mini-btn primary">이 회차에 추가</button>
+        </details>
+        <label class="row"><span>알림: 이만큼 회차가 지나도 안 풀리면</span><input type="number" id="hookAge" class="num" min="1" step="1"></label>
+      </section>
     </div>
   </aside>
 

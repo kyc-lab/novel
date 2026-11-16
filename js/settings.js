@@ -14,6 +14,8 @@ const DEFAULTS = {
   overlay: false, // 본문 위에 떠 있는 작은 글자수
   aiProvider: 'openai', // AI 담당: 'openai'(GPT) / 'gemini' / 'claude'
   aiModels: {}, // 회사별로 고른 모델 { openai: 'gpt-…' }. 비어 있으면 기본 모델
+  checkItems: [], // 점검 항목(비어 있으면 기본 항목)
+  hookAge: 10, // 이만큼 회차가 지나도 안 풀린 떡밥은 알림
   symbols: ['⋯', '⋯⋯', '……', '…', '「」', '『』', '―', '·', '~', '“”', '‘’', '♡', '★', '《》'], // 기호 바
   // 말줄임표 모양: 'mid' ⋯ / 'low' …  — 점 세 개를 치면 한 개, 바로 하나 더 치면 두 개(⋯⋯)가 된다.
   ellipsisStyle: 'mid',
