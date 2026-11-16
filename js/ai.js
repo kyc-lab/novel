@@ -98,7 +98,9 @@ const openai = {
   headers: (key) => ({ Authorization: 'Bearer ' + key, 'Content-Type': 'application/json' }),
 
   async ask({ key, model, system, user, json, effort }) {
-    const body = { model, input: user };
+    // JSON으로 받으려면 GPT는 "질문 본문"에 json이라는 말이 꼭 있어야 한다(지시문에만 있으면 거절).
+    const input = json && !/json/i.test(user) ? `${user}\n\n(답은 JSON 객체 하나로)` : user;
+    const body = { model, input };
     if (system) body.instructions = system;
     if (json) body.text = { format: { type: 'json_object' } };
     // 생각을 짧게 하라고 하면 빠르고 싸다. 모델이 이 옵션을 모르면 빼고 다시 보낸다.

@@ -116,7 +116,8 @@ export function initPanel({ editor, getChapter, beforeFix, isLocked }) {
       return;
     }
     el.run.disabled = false;
-    el.info.textContent = `${ch ? [...editor.value].length.toLocaleString('ko-KR') + '자' : ''} · ${name}(${ai.currentModel(provider)})가 검사해.`;
+    const chars = [...editor.value.replace(/[\r\n]/g, '')].length; // 아래 글자수와 같게 줄바꿈은 빼고 센다
+    el.info.textContent = `${ch ? chars.toLocaleString('ko-KR') + '자' : ''} · ${name}(${ai.currentModel(provider)})가 검사해.`;
   }
 
   function render() {
