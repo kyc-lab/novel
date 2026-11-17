@@ -53,6 +53,7 @@ let hooks = {
   patchChapter: async () => false,
   // 위키 문서도 마찬가지(위키 화면에 열려 있는 문서)
   patchWiki: async () => false,
+  patchNote: async () => false, // 작법 노트도 마찬가지
   // 충돌: 'local'(이 기기 버전) 또는 'remote'(드라이브 버전)를 돌려준다.
   resolveConflict: async () => 'local',
 };
@@ -80,6 +81,7 @@ async function getBook() {
     deletedWorks: {}, // { 작품id: 지운 시각 }
     deletedChapters: {},
     deletedWiki: {},
+    deletedNotes: {},
     everSynced: false,
     ...((await db.getMeta('sync')) ?? {}),
   };
@@ -94,7 +96,7 @@ export async function markWorksDirty() {
 
 export async function addTombstone(kind, id) {
   const book = await getBook();
-  const list = kind === 'work' ? book.deletedWorks : kind === 'wiki' ? book.deletedWiki : book.deletedChapters;
+  const list = kind === 'work' ? book.deletedWorks : kind === 'wiki' ? book.deletedWiki : kind === 'note' ? book.deletedNotes : book.deletedChapters;
   list[id] = Date.now();
   book.worksDirty = true;
   await setBook(book);
@@ -226,6 +228,21 @@ const KINDS = [
       a.body === b.body && a.title === b.title && a.category === b.category && a.workId === b.workId &&
       JSON.stringify(a.status ?? []) === JSON.stringify(b.status ?? []) && JSON.stringify(a.hook ?? null) === JSON.stringify(b.hook ?? null),
   },
+  {
+    name: '작법',
+    store: 'notes',
+    prefix: 'nt-', // nt-<id>.json — 작품과 상관없는 작법 노트 팁
+    tomb: 'deletedNotes',
+    hook: 'patchNote',
+    toRemote: (n) => {
+      const { remoteId, remoteVer, dirty, ...rest } = n; // 동기화용 꼬리표만 빼고 그대로
+      return rest;
+    },
+    same: (a, b) => {
+      const strip = ({ remoteId, remoteVer, dirty, updatedAt, ...rest }) => stable(rest);
+      return strip(a) === strip(b);
+    },
+  },
 ];
 
 async function patchItem(kind, id, fn) {
@@ -283,6 +300,7 @@ const worksPayload = (works, book) => ({
   deletedWorks: book.deletedWorks ?? {},
   deletedChapters: book.deletedChapters ?? {},
   deletedWiki: book.deletedWiki ?? {},
+  deletedNotes: book.deletedNotes ?? {},
 });
 const stable = (obj) => JSON.stringify(obj, (k, v) => (v && typeof v === 'object' && !Array.isArray(v) ? Object.fromEntries(Object.entries(v).sort()) : v));
 
@@ -374,6 +392,7 @@ export async function syncAll() {
     Object.entries(remoteWorks.deletedWorks ?? {}).forEach(([id, at]) => (book.deletedWorks[id] ??= at));
     Object.entries(remoteWorks.deletedChapters ?? {}).forEach(([id, at]) => (book.deletedChapters[id] ??= at));
     Object.entries(remoteWorks.deletedWiki ?? {}).forEach(([id, at]) => (book.deletedWiki[id] ??= at));
+    Object.entries(remoteWorks.deletedNotes ?? {}).forEach(([id, at]) => (book.deletedNotes[id] ??= at));
     const localWorks = new Map((await db.getAll('works')).map((w) => [w.id, w]));
     for (const rw of remoteWorks.works ?? []) {
       if (book.deletedWorks[rw.id]) continue;

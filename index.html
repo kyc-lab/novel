@@ -21,6 +21,14 @@
         <span id="wikiLabel" class="wiki-label"></span>
       </div>
       <button id="btnWiki" class="text-btn" type="button" title="이 작품의 위키 열기">위키</button>
+      <div class="plan-wrap">
+        <button id="btnPlan" class="text-btn" type="button" title="작법 노트 · 연재 로드맵 · 전개 회의실">기획 ▾</button>
+        <div id="planMenu" class="plan-menu" hidden>
+          <button type="button" data-page="notes">작법 노트</button>
+          <button type="button" disabled title="준비 중">연재 로드맵 · 준비 중</button>
+          <button type="button" disabled title="준비 중">전개 회의실 · 준비 중</button>
+        </div>
+      </div>
       <button id="btnAi" class="text-btn" type="button" title="설정집·초안·질문·맞춤법·점검·떡밥">AI</button>
       <button id="saveStatus" class="save-status" type="button"></button>
       <span class="tb-break"></span>
@@ -85,6 +93,24 @@
           <p id="wikiHint" class="hint wiki-hint">[[문서 제목]] = 그 문서로 가는 링크 · # 큰 제목 · ## 작은 제목 · - 목록</p>
         </div>
       </article>
+    </section>
+
+    <!-- 작법 노트: 모든 작품이 같이 쓰는 작법 팁 모음 -->
+    <section id="notes" class="notes" hidden>
+      <div class="notes-box">
+        <h2 class="notes-h">팁 넣기</h2>
+        <textarea id="ntText" class="pane-input" rows="5" placeholder="보거나 들은 작법 팁을 그대로 붙여넣어. 한 줄이든 긴 글이든 괜찮아.&#10;예: 3화 안에 주인공의 목표를 독자에게 보여줘야 한다. 회차 끝은 질문으로 끊어라."></textarea>
+        <div class="nt-src-row">
+          <input id="ntSource" class="pane-input" type="text" placeholder="출처 (선택: 책·강의·유튜브 …)" autocomplete="off">
+          <button type="button" id="ntGo" class="mini-btn primary">AI로 정리</button>
+        </div>
+        <p id="ntInfo" class="hint"></p>
+        <div id="ntDraft"></div>
+        <div id="ntConflicts"></div>
+        <h2 class="notes-h">저장된 팁 <small id="ntCount"></small></h2>
+        <div id="ntFilter" class="chips"></div>
+        <ul id="ntList" class="proof-list"></ul>
+      </div>
     </section>
 
     <!-- 아래쪽: 글자수 -->

@@ -18,6 +18,7 @@ import * as draft from './draft.js';
 import * as lore from './lore.js';
 import * as aimarks from './aimarks.js';
 import * as nav from './nav.js';
+import * as notes from './notes.js';
 
 const SAVE_DELAY = 300; // 입력이 멈추고 이만큼(ms) 지나면 기기에 저장
 
@@ -284,6 +285,7 @@ async function runSync() {
     refreshStatus();
     await reloadFromDb(res);
     await wiki.reload(); // 위키 화면도 받아온 내용으로 맞춘다
+    if (currentPage === 'notes') await notesPage.reload();
     await sync.pushDirty(firstSync ? null : currentPosition());
     pending = await sync.hasPending();
     syncError = '';
@@ -371,7 +373,16 @@ sync.init({
   },
   // 두 기기에서 같은 회차를 따로 고쳤을 때: 작가가 고른다.
   patchWiki: (id, fn) => wiki.patch(id, fn),
-  resolveConflict: (mine, theirs) => history.askConflict(mine, theirs, countLabel),
+  patchNote: (id, fn) => notes.patch(id, fn),
+  resolveConflict: (mine, theirs, kind) =>
+    kind === '작법'
+      ? // 작법 팁은 규칙 한 줄을 본문처럼 보여 준다
+        history.askConflict(
+          { ...mine, title: '작법 노트 팁', body: mine.rule ?? '' },
+          { ...theirs, title: '작법 노트 팁', body: theirs.rule ?? '' },
+          countLabel,
+        )
+      : history.askConflict(mine, theirs, countLabel),
 });
 
 const countLabel = (text) => fmt(mainCount(text));
@@ -892,14 +903,14 @@ aimarks.init({ editor: el.editor, mirror: $('#editorMirror'), getChapter: curren
 const inWiki = () => document.body.classList.contains('mode-wiki');
 const navBar = nav.init({
   isActive: (id) =>
-    id === 'chapters' ? el.sidebar.classList.contains('open') : id === 'wiki' ? inWiki() : aiPanelOpen() && currentTab === id,
+    id === 'chapters' ? el.sidebar.classList.contains('open') : id === 'wiki' || id === 'notes' ? currentPage === id : aiPanelOpen() && currentTab === id,
   async run(id) {
-    if (id === 'wiki') {
+    if (id === 'wiki' || id === 'notes') {
       setAiPanel(false);
-      await setWikiMode(!inWiki());
+      await setPage(currentPage === id ? null : id);
       return;
     }
-    if (inWiki()) await setWikiMode(false);
+    if (currentPage) await setPage(null);
     if (id === 'chapters') {
       setAiPanel(false);
       openSidebar();
@@ -937,21 +948,60 @@ wiki.init({
   },
 });
 
-async function setWikiMode(on) {
-  if (on) {
-    await flush();
-    const work = state.works.find((w) => w.id === state.workId);
+// 원고 화면 대신 통째로 여는 화면(페이지): 'wiki'(위키) / 'notes'(작법 노트) / null(원고)
+let currentPage = null;
+async function setPage(page) {
+  if (currentPage === 'wiki' && page !== 'wiki') await wiki.flush();
+  if (page) await flush();
+  const work = state.works.find((w) => w.id === state.workId);
+  if (page === 'wiki') {
     $('#wikiLabel').textContent = `${work.title} · 위키`;
     await wiki.open(state.workId);
-  } else {
-    await wiki.flush();
+  } else if (page === 'notes') {
+    $('#wikiLabel').textContent = '작법 노트 · 모든 작품 공통';
+    await notesPage.open();
   }
-  document.body.classList.toggle('mode-wiki', on);
-  $('#wiki').hidden = !on;
-  $('#btnWiki').textContent = on ? '원고로' : '위키';
-  if (on) setFocusMode(false);
+  currentPage = page;
+  document.body.classList.toggle('mode-page', !!page);
+  document.body.classList.toggle('mode-wiki', page === 'wiki');
+  document.body.classList.toggle('mode-notes', page === 'notes');
+  $('#wiki').hidden = page !== 'wiki';
+  $('#notes').hidden = page !== 'notes';
+  $('#btnWiki').textContent = page === 'wiki' ? '원고로' : '위키';
+  $('#btnPlan').textContent = page === 'notes' ? '원고로' : '기획 ▾';
+  if (page) {
+    setFocusMode(false);
+    setAiPanel(false);
+  }
 }
-$('#btnWiki').addEventListener('click', () => setWikiMode(!document.body.classList.contains('mode-wiki')));
+const setWikiMode = (on) => setPage(on ? 'wiki' : null);
+$('#btnWiki').addEventListener('click', () => setPage(currentPage === 'wiki' ? null : 'wiki'));
+
+// 기획 메뉴(작법 노트 · 연재 로드맵 · 전개 회의실)
+$('#btnPlan').addEventListener('click', (e) => {
+  e.stopPropagation();
+  if (currentPage === 'notes') return setPage(null);
+  $('#planMenu').hidden = !$('#planMenu').hidden;
+});
+$('#planMenu').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-page]');
+  if (!b) return;
+  $('#planMenu').hidden = true;
+  setPage(b.dataset.page);
+});
+document.addEventListener('click', (e) => {
+  if (!e.target.closest('.plan-wrap')) $('#planMenu').hidden = true;
+});
+
+// 작법 노트
+const notesPage = notes.init({
+  workId: () => state.workId,
+  onChange: () => markPending(),
+  async onDelete(id) {
+    await sync.addTombstone('note', id);
+    markPending();
+  },
+});
 
 // ───────── 회차 완료: PDF로 만들어 드라이브에 저장하고 완료 표시 ─────────
 

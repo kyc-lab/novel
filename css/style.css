@@ -465,19 +465,19 @@ body.focus .focus-exit { display: block; }
 
 /* ── 위키 ── */
 .wiki-label { display: none; flex: 1; min-width: 0; font-size: 16px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-body.mode-wiki .wiki-label { display: block; }
-body.mode-wiki .chap-num,
-body.mode-wiki .chap-title,
-body.mode-wiki #btnMenu,
-body.mode-wiki #btnDone,
-body.mode-wiki #btnAi,
-body.mode-wiki .ai-panel,
-body.mode-wiki #btnHistory,
-body.mode-wiki #btnFocus,
-body.mode-wiki .sidebar,
-body.mode-wiki .symbol-bar,
-body.mode-wiki .editor-wrap,
-body.mode-wiki .bottombar { display: none; }
+body.mode-page .wiki-label { display: block; }
+body.mode-page .chap-num,
+body.mode-page .chap-title,
+body.mode-page #btnMenu,
+body.mode-page #btnDone,
+body.mode-page #btnAi,
+body.mode-page .ai-panel,
+body.mode-page #btnHistory,
+body.mode-page #btnFocus,
+body.mode-page .sidebar,
+body.mode-page .symbol-bar,
+body.mode-page .editor-wrap,
+body.mode-page .bottombar { display: none; }
 
 .wiki { grid-row: 2 / -1; grid-column: 1 / -1; display: flex; min-height: 0; }
 .wiki[hidden] { display: none; }
@@ -957,4 +957,50 @@ body.ai-open #app { padding-right: 380px; }
   /* 원고를 쓰는 동안(키보드가 올라와 있을 때)은 아래 바를 숨겨서 자리를 넓힌다 */
   body.typing .mobile-nav { display: none; }
   body.typing #app { height: 100dvh; }
+}
+
+/* ── 기획 메뉴 · 작법 노트 ── */
+.plan-wrap { position: relative; flex: none; }
+.plan-menu {
+  position: absolute; top: calc(100% + 6px); right: 0; z-index: 12;
+  min-width: 190px;
+  display: flex; flex-direction: column;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  overflow: hidden;
+  box-shadow: 0 8px 24px rgba(0,0,0,.35);
+}
+.plan-menu[hidden] { display: none; }
+.plan-menu button { text-align: left; padding: 11px 14px; }
+.plan-menu button:hover:not(:disabled) { background: var(--line); }
+.plan-menu button:disabled { color: var(--muted); cursor: default; }
+
+.notes { grid-row: 2 / -1; grid-column: 1 / -1; min-height: 0; overflow-y: auto; }
+.notes[hidden] { display: none; }
+.notes-box { max-width: 760px; margin: 0 auto; padding: 18px 20px 30vh; }
+.notes-h { font-size: 17px; margin: 18px 0 8px; }
+.notes-h small { font-size: 13px; color: var(--muted); font-weight: 400; margin-left: 6px; }
+.nt-src-row { display: flex; gap: 8px; align-items: center; }
+.nt-src-row input { flex: 1; }
+.nt-keep { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; color: var(--muted); margin-bottom: 4px; }
+.nt-rule { font-family: var(--ui-font); }
+.nt-fields { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 4px; font-size: 13px; }
+.nt-fields select, .nt-fields input {
+  background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 5px 6px;
+}
+.nt-fields input { width: 5.5em; }
+.nt-fields input:last-child { width: 9em; }
+.nt-range[hidden] { display: none; }
+.nt-row { display: flex; gap: 10px; align-items: flex-start; }
+.nt-row .switch { margin-top: 3px; flex: none; }
+.nt-rule-text { margin: 0; line-height: 1.6; }
+.nt-pref { color: #E0A458; }
+.nt-original { white-space: pre-wrap; font-size: 13px; color: var(--muted); line-height: 1.6; margin: 4px 0; }
+.nt-here { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: var(--muted); margin-right: auto; }
+.nt-vs { margin: 4px 0; line-height: 1.6; }
+#ntFilter .chip { font-family: var(--ui-font); font-size: 13px; height: 32px; }
+@media (max-width: 800px) {
+  .notes-box { padding: 12px 14px 30vh; }
+  #btnPlan { display: none; }
 }
