@@ -21,7 +21,17 @@ export const PROVIDERS = {
       ['gpt-6.1-sol', '고급 · 비쌈', 2.0, 10.0],
     ],
   },
-  gemini: { name: '제미나이', ready: false, defaultModel: '', models: [] },
+  // 제미나이 가격은 2026-11 Google 가격표 기준(3.8 Flash는 2027-01-01부터 두 배로 오를 예정)
+  gemini: {
+    name: '제미나이',
+    ready: true,
+    defaultModel: 'gemini-3.8-flash',
+    models: [
+      ['gemini-3.8-flash', '추천', 0.75, 3.75],
+      ['gemini-4-hydrogen', '고급', 1.5, 7.5],
+      ['gemini-3.5-flash-lite', '저렴', 0.3, 2.5],
+    ],
+  },
   // Claude 가격은 2026-11 Anthropic 가격표 기준
   claude: {
     name: 'Claude',
@@ -97,7 +107,7 @@ async function explain(res, providerName) {
   } catch {
     // 본문이 없으면 상태 번호만으로 설명
   }
-  if (res.status === 401) return `${providerName} 키가 맞지 않아. 설정에서 키를 다시 넣어줘.`;
+  if (res.status === 401 || /API key not valid|API_KEY_INVALID/i.test(code + detail)) return `${providerName} 키가 맞지 않아. 설정에서 키를 다시 넣어줘.`;
   if (/credit balance|quota|billing/i.test(code + detail) && (res.status === 400 || res.status === 429)) return `${providerName} 충전 금액이 없거나 월 한도에 닿았어. 결제 설정을 확인해줘.`;
   if (res.status === 429) return `${providerName} 요청이 너무 잦아. 잠깐 뒤에 다시 해줘.`;
   if (res.status === 404) return `고른 모델을 쓸 수 없어. 설정에서 다른 모델을 골라줘. (${detail})`;
@@ -215,7 +225,59 @@ const claude = {
   },
 };
 
-const ADAPTERS = { openai, claude };
+// 제미나이(Google). 브라우저에서 바로 부른다.
+const gemini = {
+  base: 'https://generativelanguage.googleapis.com/v1beta',
+  headers: (key) => ({ 'x-goog-api-key': key, 'content-type': 'application/json' }),
+
+  async ask({ key, model, system, user, json, effort }) {
+    const body = {
+      contents: [{ role: 'user', parts: [{ text: user }] }],
+      generationConfig: { maxOutputTokens: 16000 },
+    };
+    if (system) body.systemInstruction = { parts: [{ text: system }] };
+    if (json) body.generationConfig.responseMimeType = 'application/json';
+    if (effort) body.generationConfig.thinkingConfig = { thinkingLevel: String(effort).toUpperCase() };
+    const send = () =>
+      request(`${this.base}/models/${encodeURIComponent(model)}:generateContent`, {
+        method: 'POST',
+        headers: this.headers(key),
+        body: JSON.stringify(body),
+      });
+    let res = await send();
+    // 모델이 생각 깊이 옵션을 모르면 빼고 다시 보낸다.
+    if (res.status === 400 && body.generationConfig.thinkingConfig && /thinking/i.test(await res.clone().text())) {
+      delete body.generationConfig.thinkingConfig;
+      res = await send();
+    }
+    if (!res.ok) throw new Error(await explain(res, '제미나이'));
+    const data = await res.json();
+    if (data.promptFeedback?.blockReason) throw new Error('제미나이가 이 요청은 답하지 않겠대. 내용을 조금 바꿔서 다시 해줘.');
+    const cand = data.candidates?.[0];
+    if (cand?.finishReason === 'SAFETY') throw new Error('제미나이가 안전 문제로 답을 멈췄어. 내용을 조금 바꿔서 다시 해줘.');
+    const text = (cand?.content?.parts ?? [])
+      .filter((p) => !p.thought && typeof p.text === 'string')
+      .map((p) => p.text)
+      .join('');
+    const u = data.usageMetadata ?? {};
+    return {
+      text,
+      // 생각한 토큰도 출력 요금으로 나간다
+      usage: { input: u.promptTokenCount ?? 0, output: (u.candidatesTokenCount ?? 0) + (u.thoughtsTokenCount ?? 0) },
+    };
+  },
+
+  async listModels(key) {
+    const res = await request(`${this.base}/models?pageSize=200`, { headers: this.headers(key) });
+    if (!res.ok) throw new Error(await explain(res, '제미나이'));
+    const data = await res.json();
+    return (data.models ?? [])
+      .filter((m) => (m.supportedGenerationMethods ?? []).includes('generateContent'))
+      .map((m) => String(m.name).replace(/^models\//, ''));
+  },
+};
+
+const ADAPTERS = { openai, claude, gemini };
 
 // AI에게 묻는다. { system: 역할·규칙, user: 내용, json: 답을 JSON으로 받을지 }
 // 돌려주는 것: { text, usage: { input, output }, provider, model }
@@ -321,7 +383,7 @@ export function initPanel(dialog) {
       // 이 키로 쓸 수 있는 모델을 목록에 더한다(글 쓰는 모델만).
       try {
         extraModels = (await listModels(keyFor))
-          .filter((id) => (keyFor === 'claude' ? /^claude-/.test(id) : /^gpt-\d/.test(id)) && !/audio|realtime|image|tts|transcribe|embedding|search|codex|instruct/.test(id))
+          .filter((id) => (keyFor === 'claude' ? /^claude-/.test(id) : keyFor === 'gemini' ? /^gemini-/.test(id) : /^gpt-\d/.test(id)) && !/audio|realtime|image|tts|transcribe|embedding|search|codex|instruct/.test(id))
           .sort()
           .reverse();
         render();
