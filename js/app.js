@@ -19,6 +19,7 @@ import * as lore from './lore.js';
 import * as aimarks from './aimarks.js';
 import * as nav from './nav.js';
 import * as notes from './notes.js';
+import * as meeting from './meeting.js';
 
 const SAVE_DELAY = 300; // 입력이 멈추고 이만큼(ms) 지나면 기기에 저장
 
@@ -286,6 +287,7 @@ async function runSync() {
     await reloadFromDb(res);
     await wiki.reload(); // 위키 화면도 받아온 내용으로 맞춘다
     if (currentPage === 'notes') await notesPage.reload();
+    if (currentPage === 'meeting') await meetingPage.reload();
     await sync.pushDirty(firstSync ? null : currentPosition());
     pending = await sync.hasPending();
     syncError = '';
@@ -374,6 +376,7 @@ sync.init({
   // 두 기기에서 같은 회차를 따로 고쳤을 때: 작가가 고른다.
   patchWiki: (id, fn) => wiki.patch(id, fn),
   patchNote: (id, fn) => notes.patch(id, fn),
+  patchMeeting: (id, fn) => meetingPage.patch(id, fn),
   resolveConflict: (mine, theirs, kind) =>
     kind === '작법'
       ? // 작법 팁은 규칙 한 줄을 본문처럼 보여 준다
@@ -493,6 +496,10 @@ async function onWorkMenu(act) {
     for (const c of state.chapters) {
       await db.del('chapters', c.id);
       await sync.addTombstone('chapter', c.id);
+    }
+    for (const m of await db.getMeetingsOf(work.id)) {
+      await db.del('meetings', m.id);
+      await sync.addTombstone('meeting', m.id);
     }
     for (const doc of await db.getWikiOf(work.id)) {
       await db.del('wiki', doc.id);
@@ -903,9 +910,9 @@ aimarks.init({ editor: el.editor, mirror: $('#editorMirror'), getChapter: curren
 const inWiki = () => document.body.classList.contains('mode-wiki');
 const navBar = nav.init({
   isActive: (id) =>
-    id === 'chapters' ? el.sidebar.classList.contains('open') : id === 'wiki' || id === 'notes' ? currentPage === id : aiPanelOpen() && currentTab === id,
+    id === 'chapters' ? el.sidebar.classList.contains('open') : id === 'wiki' || id === 'notes' || id === 'meeting' ? currentPage === id : aiPanelOpen() && currentTab === id,
   async run(id) {
-    if (id === 'wiki' || id === 'notes') {
+    if (id === 'wiki' || id === 'notes' || id === 'meeting') {
       setAiPanel(false);
       await setPage(currentPage === id ? null : id);
       return;
@@ -960,15 +967,20 @@ async function setPage(page) {
   } else if (page === 'notes') {
     $('#wikiLabel').textContent = '작법 노트 · 모든 작품 공통';
     await notesPage.open();
+  } else if (page === 'meeting') {
+    $('#wikiLabel').textContent = `${work.title} · 전개 회의실`;
+    await meetingPage.open();
   }
   currentPage = page;
   document.body.classList.toggle('mode-page', !!page);
   document.body.classList.toggle('mode-wiki', page === 'wiki');
   document.body.classList.toggle('mode-notes', page === 'notes');
+  document.body.classList.toggle('mode-meeting', page === 'meeting');
   $('#wiki').hidden = page !== 'wiki';
   $('#notes').hidden = page !== 'notes';
+  $('#meeting').hidden = page !== 'meeting';
   $('#btnWiki').textContent = page === 'wiki' ? '원고로' : '위키';
-  $('#btnPlan').textContent = page === 'notes' ? '원고로' : '기획 ▾';
+  $('#btnPlan').textContent = page === 'notes' || page === 'meeting' ? '원고로' : '기획 ▾';
   if (page) {
     setFocusMode(false);
     setAiPanel(false);
@@ -980,7 +992,7 @@ $('#btnWiki').addEventListener('click', () => setPage(currentPage === 'wiki' ? n
 // 기획 메뉴(작법 노트 · 연재 로드맵 · 전개 회의실)
 $('#btnPlan').addEventListener('click', (e) => {
   e.stopPropagation();
-  if (currentPage === 'notes') return setPage(null);
+  if (currentPage === 'notes' || currentPage === 'meeting') return setPage(null);
   $('#planMenu').hidden = !$('#planMenu').hidden;
 });
 $('#planMenu').addEventListener('click', (e) => {
@@ -991,6 +1003,17 @@ $('#planMenu').addEventListener('click', (e) => {
 });
 document.addEventListener('click', (e) => {
   if (!e.target.closest('.plan-wrap')) $('#planMenu').hidden = true;
+});
+
+// 전개 회의실
+const meetingPage = meeting.init({
+  ...aiCtx,
+  workId: () => state.workId,
+  onChange: () => markPending(),
+  async onDelete(id) {
+    await sync.addTombstone('meeting', id);
+    markPending();
+  },
 });
 
 // 작법 노트

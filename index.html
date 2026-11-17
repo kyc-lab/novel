@@ -26,7 +26,7 @@
         <div id="planMenu" class="plan-menu" hidden>
           <button type="button" data-page="notes">작법 노트</button>
           <button type="button" disabled title="준비 중">연재 로드맵 · 준비 중</button>
-          <button type="button" disabled title="준비 중">전개 회의실 · 준비 중</button>
+          <button type="button" data-page="meeting">전개 회의실</button>
         </div>
       </div>
       <button id="btnAi" class="text-btn" type="button" title="설정집·초안·질문·맞춤법·점검·떡밥">AI</button>
@@ -111,6 +111,28 @@
         <div id="ntFilter" class="chips"></div>
         <ul id="ntList" class="proof-list"></ul>
       </div>
+    </section>
+
+    <!-- 전개 회의실: 다음 화 전개 브레인스토밍 -->
+    <section id="meeting" class="meeting" hidden data-tab="center">
+      <div class="mt-top">
+        <label class="mt-no">대상 <input id="mtNo" type="number" min="1" step="1"> 화</label>
+        <input id="mtWish" class="pane-input" type="text" placeholder="이번 회차에서 원하는 것 (선택: 예) 철수와 영희가 처음 부딪히게)" autocomplete="off">
+        <button type="button" id="mtStart" class="mini-btn primary">새 회의 시작</button>
+        <select id="mtHistory" class="pick" aria-label="회의 기록"></select>
+      </div>
+      <p class="mt-status"><span id="mtStatus"></span> <span id="mtCost" class="hint"></span></p>
+      <nav id="mtTabs" class="mt-tabs">
+        <button type="button" data-col="material">자료</button>
+        <button type="button" data-col="center">전개안</button>
+        <button type="button" data-col="right">정리</button>
+      </nav>
+      <div class="mt-grid">
+        <aside id="mtMaterial" class="mt-col" data-col="material"></aside>
+        <div id="mtCenter" class="mt-col" data-col="center"></div>
+        <aside id="mtRight" class="mt-col" data-col="right"></aside>
+      </div>
+      <div id="mtActions" class="mt-actions"></div>
     </section>
 
     <!-- 아래쪽: 글자수 -->

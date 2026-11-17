@@ -13,8 +13,9 @@ export const ITEMS = {
   hooks: { label: '떡밥', icon: '◎' },
   wiki: { label: '위키', icon: '▤' },
   notes: { label: '작법', icon: '✍' },
+  meeting: { label: '회의실', icon: '☷' },
 };
-export const DEFAULT_ORDER = ['chapters', 'ask', 'proof', 'check', 'draft', 'lore', 'hooks', 'wiki', 'notes'];
+export const DEFAULT_ORDER = ['chapters', 'ask', 'proof', 'check', 'draft', 'lore', 'hooks', 'wiki', 'notes', 'meeting'];
 const BAR = 4;
 
 export function order() {

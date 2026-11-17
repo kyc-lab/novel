@@ -1004,3 +1004,71 @@ body.ai-open #app { padding-right: 380px; }
   .notes-box { padding: 12px 14px 30vh; }
   #btnPlan { display: none; }
 }
+
+/* ── 전개 회의실 ── */
+.meeting { grid-row: 2 / -1; grid-column: 1 / -1; min-height: 0; display: flex; flex-direction: column; }
+.meeting[hidden] { display: none; }
+.mt-top { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 10px 16px 0; }
+.mt-top .pane-input { flex: 1; min-width: 200px; margin: 0; }
+.mt-no input { width: 4.5em; background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; padding: 6px; text-align: right; }
+.mt-status { margin: 6px 16px; font-size: 13px; min-height: 1.4em; }
+.mt-tabs { display: none; }
+.mt-grid { flex: 1; min-height: 0; display: grid; grid-template-columns: 250px 1fr 300px; }
+.mt-col { min-height: 0; overflow-y: auto; padding: 4px 16px 30px; }
+#mtMaterial, #mtRight { background: var(--panel); }
+#mtMaterial { border-right: 1px solid var(--line); }
+#mtRight { border-left: 1px solid var(--line); }
+.mt-h4 { margin: 14px 0 4px; font-size: 13px; color: var(--muted); }
+.mt-list { margin: 4px 0; padding-left: 20px; line-height: 1.6; font-size: 14px; }
+.mt-list li.used { color: var(--accent); font-weight: 700; }
+.mt-empty { margin: 40px auto; max-width: 440px; text-align: center; line-height: 1.7; }
+.mt-brief { border: 1px solid var(--line); border-radius: 10px; padding: 4px 14px 10px; margin-bottom: 12px; }
+.mt-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 10px; }
+.mt-card { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; background: var(--panel-2); display: flex; flex-direction: column; }
+.mt-card h3 { margin: 6px 0; font-size: 16px; }
+.mt-card-head { display: flex; justify-content: space-between; gap: 6px; font-size: 12px; }
+.mt-card.adopt { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.mt-card.keep { border-color: #E0A458; }
+.mt-card.drop { opacity: .45; }
+.mt-summary { line-height: 1.7; font-size: 14px; margin: 4px 0; white-space: pre-wrap; }
+.mt-beats { margin: 4px 0; padding-left: 20px; font-size: 13px; line-height: 1.6; color: var(--muted); }
+.mt-ending { font-size: 13px; margin: 6px 0; }
+.mt-score { font-size: 12px; color: var(--muted); margin: 6px 0; letter-spacing: .5px; }
+.mt-warn { color: #E0A458; font-size: 13px; margin: 4px 0; }
+.mt-choice { margin-top: auto; padding-top: 8px; }
+.mt-pager { display: none; }
+.mt-memo { margin-top: 12px; }
+.mt-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.mt-table th, .mt-table td { border-bottom: 1px solid var(--line); padding: 5px 4px; text-align: left; }
+.mt-table td:not(:first-child), .mt-table th:not(:first-child) { text-align: center; width: 3.5em; }
+.mt-opinion { margin: 10px 0; padding: 8px 10px; border-left: 3px solid var(--accent); background: var(--panel-2); border-radius: 0 8px 8px 0; line-height: 1.6; }
+.mt-actions { display: none; }
+
+@media (max-width: 1100px) and (min-width: 801px) {
+  .mt-grid { grid-template-columns: 1fr 280px; }
+  #mtMaterial { display: none; }
+}
+@media (max-width: 800px) {
+  .mt-top { padding: 8px 12px 0; }
+  .mt-tabs { display: flex; gap: 4px; padding: 0 12px 6px; border-bottom: 1px solid var(--line); }
+  .mt-tabs button { flex: 1; padding: 8px; border-radius: 8px; color: var(--muted); }
+  .mt-tabs button.on { background: var(--panel-2); color: var(--text); font-weight: 700; }
+  .mt-grid { grid-template-columns: 1fr; }
+  .mt-col { display: none; padding: 8px 12px 90px; background: none !important; border: 0 !important; }
+  .meeting[data-tab="material"] #mtMaterial,
+  .meeting[data-tab="center"] #mtCenter,
+  .meeting[data-tab="right"] #mtRight { display: block; }
+  /* 전개안은 한 장씩 */
+  .mt-cards { display: block; }
+  .mt-card { display: none; }
+  .mt-card.mt-current { display: flex; }
+  .mt-card .mt-choice { display: none; }
+  .mt-pager { display: flex; justify-content: center; align-items: center; gap: 14px; margin: 8px 0; }
+  .meeting[data-tab="center"] .mt-actions:not(:empty) {
+    display: flex; gap: 8px; justify-content: center;
+    position: fixed; left: 0; right: 0; z-index: 6;
+    bottom: calc(var(--nav-h) + env(safe-area-inset-bottom));
+    padding: 8px 12px; background: var(--panel); border-top: 1px solid var(--line);
+  }
+  .mt-actions .mini-btn { flex: 1; padding: 10px; }
+}

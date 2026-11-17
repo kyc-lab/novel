@@ -2,7 +2,7 @@
 // 회차는 한 편이 한 덩어리 — 나중에 드라이브에도 회차별 파일로 올리기 위해서.
 
 const DB_NAME = 'novel-app';
-const DB_VERSION = 4; // 2: 되돌리기 기록(history) / 3: 위키(wiki) / 4: 작법 노트(notes) 칸 추가
+const DB_VERSION = 5; // 2: 되돌리기 기록(history) / 3: 위키(wiki) / 4: 작법 노트(notes) / 5: 전개 회의 기록(meetings)
 
 let dbPromise;
 const blockedListeners = [];
@@ -30,6 +30,10 @@ function open() {
           wiki.createIndex('workId', 'workId');
         }
         if (!has('notes')) db.createObjectStore('notes', { keyPath: 'id' }); // 작품과 상관없이 하나
+        if (!has('meetings')) {
+          const meetings = db.createObjectStore('meetings', { keyPath: 'id' });
+          meetings.createIndex('workId', 'workId');
+        }
       };
       req.onsuccess = () => {
         const db = req.result;
@@ -72,6 +76,7 @@ export const getHistoryOf = (chapterId) =>
   run('history', 'readonly', (s) => s.index('chapterId').getAll(chapterId));
 
 export const getWikiOf = (workId) => run('wiki', 'readonly', (s) => s.index('workId').getAll(workId));
+export const getMeetingsOf = (workId) => run('meetings', 'readonly', (s) => s.index('workId').getAll(workId));
 
 export const getMeta = (key) => run('meta', 'readonly', (s) => s.get(key));
 export const setMeta = (key, value) => run('meta', 'readwrite', (s) => s.put(value, key));
