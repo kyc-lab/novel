@@ -1,8 +1,8 @@
 // 전개 회의실: 다음 화 전개를 브레인스토밍한다. 실제 본문은 작가가 쓰고, AI는 아이디어와 설정 점검만 맡는다.
 // 흐름: 자료 모으기 → 진행자가 지시서 → 전개안 3개(성격이 서로 다름) → 진행자가 비교·정리 → 작가가 채택/보관/버리기
 //
-// 역할은 ROLES 에서 바꿔 끼운다. 지금은 Claude 혼자 진행하고 전개안도 낸다(기획서 3단계).
-// 다음 단계에서 writers 를 GPT·제미나이로 바꾸고 교차 검토를 넣는다.
+// 역할은 roles() 가 돌려준다(회의실 화면의 "역할 바꾸기"에서 바꾸고, 이 기기에 저장).
+// 기본: Claude 진행 · 전개안은 GPT·제미나이 · 서로의 안을 교차 검토(고쳐 쓰지 않고 장점·약점만).
 //
 // 회의 기록 하나 = {
 //   id, workId, target(몇 화 전개), round(같은 조건으로 몇 번째), parentId(앞 회의), wish(작가가 원한 것), memo(작가 메모),
@@ -19,16 +19,24 @@ import { summariesText, loreText } from './context.js';
 import { hookOf } from './hooks.js';
 import { activeTips } from './notes.js';
 import { askConfirm } from './dialogs.js';
+import * as settings from './settings.js';
 
-export const ROLES = {
-  host: 'claude', // 진행자: 지시서·정리
-  writers: [
-    // 전개안을 내는 쪽. 같은 회사가 여러 성격을 맡을 수 있다.
-    { provider: 'claude', persona: '과감한 전개', hint: '판을 크게 흔든다. 예상을 깨는 사건, 반전, 위기 고조.' },
-    { provider: 'claude', persona: '떡밥 회수', hint: '깔아 둔 떡밥을 회수하거나 크게 진전시킨다. 독자가 기다린 보상.' },
-    { provider: 'claude', persona: '감정선', hint: '인물의 감정과 관계를 깊게 판다. 대사와 선택으로 마음이 움직이는 회차.' },
-  ],
-};
+export const PERSONAS = [
+  { persona: '과감한 전개', hint: '판을 크게 흔든다. 예상을 깨는 사건, 반전, 위기 고조.' },
+  { persona: '떡밥 회수', hint: '깔아 둔 떡밥을 회수하거나 크게 진전시킨다. 독자가 기다린 보상.' },
+  { persona: '감정선', hint: '인물의 감정과 관계를 깊게 판다. 대사와 선택으로 마음이 움직이는 회차.' },
+];
+export const DEFAULT_ROLES = { host: 'claude', writers: ['openai', 'gemini', 'gemini'] };
+
+// 지금 역할: { host, writers: [{ provider, persona, hint }] }
+export function roles() {
+  const saved = settings.get().meetingRoles ?? {};
+  const ok = (p) => (ai.PROVIDERS[p]?.ready ? p : null);
+  return {
+    host: ok(saved.host) ?? DEFAULT_ROLES.host,
+    writers: PERSONAS.map((x, i) => ({ ...x, provider: ok(saved.writers?.[i]) ?? DEFAULT_ROLES.writers[i] })),
+  };
+}
 
 const uid = () => crypto.randomUUID();
 const $ = (sel) => document.querySelector(sel);
@@ -70,7 +78,13 @@ const PROPOSE = (persona, hint) => `너는 웹소설 전개 아이디어를 내�
 설정(죽은 인물, 잃은 물건, 능력·레벨, 관계)을 어기지 않는다. 지시서의 조건을 지킨다.
 출력은 JSON 객체 하나: {"title":"","summary":"","beats":[],"ending":"","tips":[]}`;
 
-const REVIEW = `너는 웹소설 기획 회의의 진행자다. 전개안들을 비교하고 정리한다. 안을 고쳐 쓰지 말고 평가만 한다.
+const CROSS = `너는 웹소설 기획 회의의 검토자다. 다른 AI가 낸 전개안을 검토한다.
+- 안을 고쳐 쓰거나 새 안을 내지 않는다. 장점과 약점만 말한다.
+- strengths: 장점 2~3개, weaknesses: 약점 2~3개(각 한 줄, 구체적으로).
+- tips: 작법 팁을 지켰는지 한 줄(어긴 팁 번호가 있으면 적는다).
+출력은 JSON 객체 하나: {"reviews":[{"n":안 번호,"strengths":[],"weaknesses":[],"tips":""}]}`;
+
+const REVIEW = `너는 웹소설 기획 회의의 진행자다. 전개안들과 교차 검토 내용을 보고 비교·정리한다. 안을 고쳐 쓰지 말고 평가만 한다.
 - table: 안마다 tension(긴장감), hooks(떡밥 회수), safety(설정 안전) 를 1~5점으로, note 는 한 줄(작법 팁을 지켰는지도).
 - conflicts: 설정과 어긋나는 점만. n(안 번호), problem, ref(근거 설정). 없으면 빈 배열.
 - opinion: 진행자 한 줄 의견(어느 안이 왜 좋은지, 섞으면 좋은 점).
@@ -101,10 +115,13 @@ async function gather(ctx, { target, wish, memo }) {
 // 회의 한 번의 대략 비용(시작 전에 보여준다). 한국어는 대략 글자 0.9개 = 토큰 1개로 본다.
 export function estimate(materialText) {
   const base = Math.round(materialText.length * 0.9) + 600;
+  const R = roles();
+  const reviewers = new Set(R.writers.map((w) => reviewerFor(R, w.provider)));
   const calls = [
-    [ROLES.host, base, 600],
-    ...ROLES.writers.map((w) => [w.provider, base + 500, 1200]),
-    [ROLES.host, base + 3000, 900],
+    [R.host, base, 600],
+    ...R.writers.map((w) => [w.provider, base + 500, 1200]),
+    ...[...reviewers].map((p) => [p, base + 2500, 800]),
+    [R.host, base + 4000, 900],
   ];
   let won = 0;
   for (const [p, input, output] of calls) won += ai.estimateWon(p, ai.currentModel(p), { input, output }) ?? 0;
@@ -113,8 +130,18 @@ export function estimate(materialText) {
 
 // ───────── 회의 진행 ─────────
 
+// 교차 검토자: 그 안을 낸 회사가 아닌 다른 전개안 담당 회사. 모두 같은 회사면 진행자가 본다.
+function reviewerFor(R, provider) {
+  return R.writers.map((w) => w.provider).find((p) => p !== provider) ?? (R.host !== provider ? R.host : provider);
+}
+export const callCount = () => {
+  const R = roles();
+  return 2 + R.writers.length + new Set(R.writers.map((w) => reviewerFor(R, w.provider))).size;
+};
+
 export async function run(ctx, { target, wish, memo, parent }, onStep) {
-  const need = new Set([ROLES.host, ...ROLES.writers.map((w) => w.provider)]);
+  const R = roles();
+  const need = new Set([R.host, ...R.writers.map((w) => w.provider)]);
   for (const p of need) if (!ai.hasKey(p)) throw new Error(`${ai.PROVIDERS[p].name} 키가 없어. 설정(⚙) → AI → 키·모델 관리에서 넣어줘.`);
 
   const usage = {};
@@ -130,16 +157,16 @@ export async function run(ctx, { target, wish, memo, parent }, onStep) {
   const mat = await gather(ctx, { target, wish, memo });
 
   onStep('진행자가 지시서 쓰는 중');
-  const b = await call(ROLES.host, BRIEF, mat.text);
+  const b = await call(R.host, BRIEF, mat.text);
   const brief = { goal: String(b.goal ?? ''), conditions: arr(b.conditions).map(String), tips: nums(b.tips).filter((n) => n <= mat.tips.length) };
   const briefText = `지시서\n목표: ${brief.goal}\n조건:\n${brief.conditions.map((c) => '- ' + c).join('\n')}\n특히 참고할 작법 팁: ${brief.tips.join(', ') || '없음'}`;
 
-  onStep(`전개안 쓰는 중 (0/${ROLES.writers.length})`);
+  onStep(`전개안 쓰는 중 (0/${R.writers.length})`);
   let done = 0;
   const proposals = await Promise.all(
-    ROLES.writers.map(async (w) => {
+    R.writers.map(async (w) => {
       const p = await call(w.provider, PROPOSE(w.persona, w.hint), `${mat.text}\n\n${briefText}`);
-      onStep(`전개안 쓰는 중 (${++done}/${ROLES.writers.length})`);
+      onStep(`전개안 쓰는 중 (${++done}/${R.writers.length})`);
       return {
         id: uid(),
         by: w.provider,
@@ -154,11 +181,37 @@ export async function run(ctx, { target, wish, memo, parent }, onStep) {
     }),
   );
 
+  const describeP = (p, i) =>
+    `안 ${i + 1} [${p.persona}] ${p.title}\n${p.summary}\n흐름: ${p.beats.join(' / ')}\n끝: ${p.ending}\n참고한 팁: ${p.tips.join(', ') || '없음'}`;
+
+  // 교차 검토: 검토자마다 자기 것이 아닌 안들을 한 번에 본다(고쳐 쓰지 않고 장점·약점만).
+  const byReviewer = new Map();
+  proposals.forEach((p, i) => {
+    const rv = reviewerFor(R, p.by);
+    if (!byReviewer.has(rv)) byReviewer.set(rv, []);
+    byReviewer.get(rv).push(i);
+  });
+  onStep('서로의 안을 검토하는 중');
+  await Promise.all(
+    [...byReviewer].map(async ([rv, idx]) => {
+      const c = await call(rv, CROSS, `${mat.text}\n\n${briefText}\n\n검토할 전개안:\n${idx.map((i) => describeP(proposals[i], i)).join('\n\n')}`);
+      for (const x of arr(c.reviews)) {
+        const i = Number(x.n) - 1;
+        if (!idx.includes(i)) continue;
+        proposals[i].review = { by: rv, strengths: arr(x.strengths).map(String), weaknesses: arr(x.weaknesses).map(String), tips: String(x.tips ?? '') };
+      }
+    }),
+  );
+
   onStep('진행자가 비교·정리하는 중');
   const list = proposals
-    .map((p, i) => `안 ${i + 1} [${p.persona}] ${p.title}\n${p.summary}\n흐름: ${p.beats.join(' / ')}\n끝: ${p.ending}\n참고한 팁: ${p.tips.join(', ') || '없음'}`)
+    .map((p, i) => {
+      const rv = p.review;
+      const cross = rv ? `\n검토(${ai.PROVIDERS[rv.by]?.name}): 장점 ${rv.strengths.join(' / ')} · 약점 ${rv.weaknesses.join(' / ')} · 팁 ${rv.tips}` : '';
+      return describeP(p, i) + cross;
+    })
     .join('\n\n');
-  const r = await call(ROLES.host, REVIEW, `${mat.text}\n\n${briefText}\n\n전개안:\n${list}`);
+  const r = await call(R.host, REVIEW, `${mat.text}\n\n${briefText}\n\n전개안과 교차 검토:\n${list}`);
   const review = {
     table: arr(r.table).map((t) => ({ n: Number(t.n), tension: score(t.tension), hooks: score(t.hooks), safety: score(t.safety), note: String(t.note ?? '') })),
     conflicts: arr(r.conflicts).filter((c) => c && c.problem).map((c) => ({ n: Number(c.n), problem: String(c.problem), ref: String(c.ref ?? '') })),
@@ -226,7 +279,7 @@ export function init(ctx) {
     try {
       materialPreview = await gather(ctx, { target, wish: el.wish.value.trim(), memo: '' });
       const won = estimate(materialPreview.text);
-      el.cost.textContent = won ? `예상 비용 ${ai.fmtWon(won)} (AI ${ROLES.writers.length + 2}번)` : '';
+      el.cost.textContent = won ? `예상 비용 ${ai.fmtWon(won)} (AI ${callCount()}번)` : '';
     } catch {
       el.cost.textContent = '';
     }
@@ -247,8 +300,32 @@ export function init(ctx) {
     const hooks = m?.material?.openHooks ?? materialPreview?.openHooks ?? [];
     const target = m?.target ?? (Number(el.no.value) || defaultTarget());
     const persons = [];
+    // 역할 바꾸기: 진행자와 성격별 전개안 담당 회사(키가 없는 회사는 흐리게)
+    const R = roles();
+    const pick = (value, onPick) => {
+      const s = h('select', { className: 'pick' });
+      for (const [id, p] of Object.entries(ai.PROVIDERS)) {
+        const o = new Option(p.name + (ai.hasKey(id) ? '' : ' (키 없음)'), id, false, id === value);
+        o.disabled = !p.ready;
+        s.append(o);
+      }
+      s.addEventListener('change', () => onPick(s.value));
+      return s;
+    };
+    const setRoles = (patch) => {
+      const cur = roles();
+      settings.update({ meetingRoles: { host: cur.host, writers: cur.writers.map((w) => w.provider), ...patch } });
+      refreshEstimate();
+    };
+    const roleBox = h('details', { className: 'pane-details mt-roles' },
+      h('summary', { textContent: `역할: 진행 ${ai.PROVIDERS[R.host].name} · 전개안 ${R.writers.map((w) => ai.PROVIDERS[w.provider].name).join('·')}` }),
+      h('label', { className: 'row' }, h('span', { textContent: '진행자' }), pick(R.host, (v) => setRoles({ host: v }))),
+      R.writers.map((w, i) =>
+        h('label', { className: 'row' }, h('span', { textContent: w.persona }), pick(w.provider, (v) => setRoles({ writers: R.writers.map((x, j) => (j === i ? v : x.provider)) })))),
+      h('p', { className: 'hint', textContent: '전개안은 그 안을 안 낸 다른 회사가 검토해.' }));
     el.material.replaceChildren(
       h('h3', { className: 'pane-h', textContent: '회의 자료' }),
+      roleBox,
       h('p', { className: 'hint', textContent: `${target}화 전개 · ${target - 1}화까지의 요약·위키를 읽어.` }),
       h('h4', { className: 'mt-h4', textContent: `안 푼 떡밥 ${hooks.length}` }),
       hooks.length ? h('ul', { className: 'mt-list' }, hooks.map((x) => h('li', { textContent: `${x.title}${x.first ? ` · ${x.first}화` : ''}` }))) : h('p', { className: 'hint', textContent: '없음' }),
@@ -277,6 +354,13 @@ export function init(ctx) {
       p.beats.length ? h('ol', { className: 'mt-beats' }, p.beats.map((b) => h('li', { textContent: b }))) : null,
       p.ending ? h('p', { className: 'mt-ending' }, h('b', { textContent: '회차 끝 ' }), p.ending) : null,
       p.tips.length ? h('p', { className: 'hint', textContent: `참고한 팁: ${p.tips.map((n) => tipText(m, n) ?? n).join(' / ')}` }) : null,
+      p.review
+        ? h('div', { className: 'mt-cross' },
+            h('b', { textContent: `${ai.PROVIDERS[p.review.by]?.name ?? p.review.by}의 검토` }),
+            p.review.strengths.length ? h('p', { textContent: `👍 ${p.review.strengths.join(' / ')}` }) : null,
+            p.review.weaknesses.length ? h('p', { textContent: `⚠ ${p.review.weaknesses.join(' / ')}` }) : null,
+            p.review.tips ? h('p', { className: 'hint', textContent: `작법 팁: ${p.review.tips}` }) : null)
+        : null,
       t ? h('p', { className: 'mt-score' }, `긴장감 ${'●'.repeat(t.tension)}${'○'.repeat(5 - t.tension)} · 떡밥 ${'●'.repeat(t.hooks)}${'○'.repeat(5 - t.hooks)} · 설정 안전 ${'●'.repeat(t.safety)}${'○'.repeat(5 - t.safety)}`) : null,
       conflicts.map((c) => h('p', { className: 'mt-warn', textContent: `⚠ ${c.problem}${c.ref ? ` (${c.ref})` : ''}` })),
       h('div', { className: 'proof-btns mt-choice' }, btn('버리기', 'drop'), btn('보관', 'keep'), btn('채택', 'adopt')),
@@ -437,7 +521,8 @@ export function init(ctx) {
       el.no.value = defaultTarget();
       page = 0;
       showTab(current ? 'center' : 'material');
-      el.status.textContent = ai.hasKey(ROLES.host) ? '' : 'Claude 키가 없어. 설정(⚙) → AI → 키·모델 관리에서 넣어줘.';
+      const missing = [...new Set([roles().host, ...roles().writers.map((w) => w.provider)])].filter((p) => !ai.hasKey(p));
+      el.status.textContent = missing.length ? `${missing.map((p) => ai.PROVIDERS[p].name).join(', ')} 키가 없어. 설정(⚙) → AI → 키·모델 관리에서 넣거나, 왼쪽 "역할 바꾸기"에서 다른 회사로 바꿔줘.` : '';
       render();
       refreshEstimate();
     },

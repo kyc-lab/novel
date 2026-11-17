@@ -1072,3 +1072,7 @@ body.ai-open #app { padding-right: 380px; }
   }
   .mt-actions .mini-btn { flex: 1; padding: 10px; }
 }
+.mt-cross { margin: 8px 0 4px; padding: 6px 8px; border-radius: 8px; background: var(--panel); font-size: 13px; line-height: 1.6; }
+.mt-cross p { margin: 2px 0; }
+.mt-roles .row { min-height: 40px; }
+.mt-roles .pick { max-width: 60%; }
