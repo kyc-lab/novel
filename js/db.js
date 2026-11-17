@@ -2,7 +2,7 @@
 // 회차는 한 편이 한 덩어리 — 나중에 드라이브에도 회차별 파일로 올리기 위해서.
 
 const DB_NAME = 'novel-app';
-const DB_VERSION = 5; // 2: 되돌리기 기록(history) / 3: 위키(wiki) / 4: 작법 노트(notes) / 5: 전개 회의 기록(meetings)
+const DB_VERSION = 6; // 2: 되돌리기 기록(history) / 3: 위키(wiki) / 4: 작법 노트(notes) / 5: 전개 회의 기록(meetings) / 6: 트렌드 자료(trends)
 
 let dbPromise;
 const blockedListeners = [];
@@ -34,6 +34,7 @@ function open() {
           const meetings = db.createObjectStore('meetings', { keyPath: 'id' });
           meetings.createIndex('workId', 'workId');
         }
+        if (!has('trends')) db.createObjectStore('trends', { keyPath: 'id' }); // 작품과 상관없이 하나
       };
       req.onsuccess = () => {
         const db = req.result;

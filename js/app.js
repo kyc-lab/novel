@@ -20,6 +20,7 @@ import * as aimarks from './aimarks.js';
 import * as nav from './nav.js';
 import * as notes from './notes.js';
 import * as meeting from './meeting.js';
+import * as idea from './idea.js';
 
 const SAVE_DELAY = 300; // 입력이 멈추고 이만큼(ms) 지나면 기기에 저장
 
@@ -287,7 +288,10 @@ async function runSync() {
     await reloadFromDb(res);
     await wiki.reload(); // 위키 화면도 받아온 내용으로 맞춘다
     if (currentPage === 'notes') await notesPage.reload();
-    if (currentPage === 'meeting') await meetingPage.reload();
+    if (currentPage === 'meeting') {
+      await meetingPage.reload();
+      if (meetingMode !== 'dev') await setMeetingMode(meetingMode);
+    }
     await sync.pushDirty(firstSync ? null : currentPosition());
     pending = await sync.hasPending();
     syncError = '';
@@ -376,7 +380,7 @@ sync.init({
   // 두 기기에서 같은 회차를 따로 고쳤을 때: 작가가 고른다.
   patchWiki: (id, fn) => wiki.patch(id, fn),
   patchNote: (id, fn) => notes.patch(id, fn),
-  patchMeeting: (id, fn) => meetingPage.patch(id, fn),
+  patchMeeting: async (id, fn) => (await meetingPage.patch(id, fn)) || ideaPage.patch(id, fn),
   resolveConflict: (mine, theirs, kind) =>
     kind === '작법'
       ? // 작법 팁은 규칙 한 줄을 본문처럼 보여 준다
@@ -970,6 +974,7 @@ async function setPage(page) {
   } else if (page === 'meeting') {
     $('#wikiLabel').textContent = `${work.title} · 전개 회의실`;
     await meetingPage.open();
+    await setMeetingMode(meetingMode);
   }
   currentPage = page;
   document.body.classList.toggle('mode-page', !!page);
@@ -1014,6 +1019,36 @@ const meetingPage = meeting.init({
     await sync.addTombstone('meeting', id);
     markPending();
   },
+});
+
+// 회의실 안의 아이디어 검토 · 트렌드 자료
+const ideaPage = idea.init({
+  ...aiCtx,
+  workId: () => state.workId,
+  onChange: () => markPending(),
+  async onDelete(id) {
+    await sync.addTombstone('meeting', id);
+    markPending();
+  },
+  // "이 아이디어로 전개 회의 열기"
+  toDevMeeting(text) {
+    setMeetingMode('dev');
+    meetingPage.prefillWish(text);
+  },
+});
+let meetingMode = 'dev';
+async function setMeetingMode(mode) {
+  meetingMode = mode;
+  $('#meeting').dataset.mode = mode;
+  for (const b of document.querySelectorAll('#mtModes [data-mode]')) b.classList.toggle('on', b.dataset.mode === mode);
+  $('#ideaPane').hidden = mode !== 'idea';
+  $('#trendPane').hidden = mode !== 'trend';
+  if (mode === 'idea') await ideaPage.openIdea();
+  if (mode === 'trend') await ideaPage.openTrend();
+}
+$('#mtModes').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-mode]');
+  if (b) setMeetingMode(b.dataset.mode);
 });
 
 // 작법 노트

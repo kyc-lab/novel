@@ -55,6 +55,7 @@ let hooks = {
   patchWiki: async () => false,
   patchNote: async () => false, // 작법 노트도 마찬가지
   patchMeeting: async () => false, // 회의 기록도 마찬가지
+  patchTrend: async () => false, // 트렌드 자료도 마찬가지
   // 충돌: 'local'(이 기기 버전) 또는 'remote'(드라이브 버전)를 돌려준다.
   resolveConflict: async () => 'local',
 };
@@ -84,6 +85,7 @@ async function getBook() {
     deletedWiki: {},
     deletedNotes: {},
     deletedMeetings: {},
+    deletedTrends: {},
     everSynced: false,
     ...((await db.getMeta('sync')) ?? {}),
   };
@@ -98,7 +100,7 @@ export async function markWorksDirty() {
 
 export async function addTombstone(kind, id) {
   const book = await getBook();
-  const list = kind === 'work' ? book.deletedWorks : kind === 'wiki' ? book.deletedWiki : kind === 'note' ? book.deletedNotes : kind === 'meeting' ? book.deletedMeetings : book.deletedChapters;
+  const list = kind === 'work' ? book.deletedWorks : kind === 'wiki' ? book.deletedWiki : kind === 'note' ? book.deletedNotes : kind === 'meeting' ? book.deletedMeetings : kind === 'trend' ? book.deletedTrends : book.deletedChapters;
   list[id] = Date.now();
   book.worksDirty = true;
   await setBook(book);
@@ -260,6 +262,21 @@ const KINDS = [
       return strip(a) === strip(b);
     },
   },
+  {
+    name: '트렌드',
+    store: 'trends',
+    prefix: 'tr-', // tr-<id>.json — 문피아 무료·유료 상위 50 같은 트렌드 자료(작품과 상관없음)
+    tomb: 'deletedTrends',
+    hook: 'patchTrend',
+    toRemote: (t) => {
+      const { remoteId, remoteVer, dirty, ...rest } = t;
+      return rest;
+    },
+    same: (a, b) => {
+      const strip = ({ remoteId, remoteVer, dirty, updatedAt, ...rest }) => stable(rest);
+      return strip(a) === strip(b);
+    },
+  },
 ];
 
 async function patchItem(kind, id, fn) {
@@ -319,6 +336,7 @@ const worksPayload = (works, book) => ({
   deletedWiki: book.deletedWiki ?? {},
   deletedNotes: book.deletedNotes ?? {},
   deletedMeetings: book.deletedMeetings ?? {},
+  deletedTrends: book.deletedTrends ?? {},
 });
 const stable = (obj) => JSON.stringify(obj, (k, v) => (v && typeof v === 'object' && !Array.isArray(v) ? Object.fromEntries(Object.entries(v).sort()) : v));
 
@@ -412,6 +430,7 @@ export async function syncAll() {
     Object.entries(remoteWorks.deletedWiki ?? {}).forEach(([id, at]) => (book.deletedWiki[id] ??= at));
     Object.entries(remoteWorks.deletedNotes ?? {}).forEach(([id, at]) => (book.deletedNotes[id] ??= at));
     Object.entries(remoteWorks.deletedMeetings ?? {}).forEach(([id, at]) => (book.deletedMeetings[id] ??= at));
+    Object.entries(remoteWorks.deletedTrends ?? {}).forEach(([id, at]) => (book.deletedTrends[id] ??= at));
     const localWorks = new Map((await db.getAll('works')).map((w) => [w.id, w]));
     for (const rw of remoteWorks.works ?? []) {
       if (book.deletedWorks[rw.id]) continue;

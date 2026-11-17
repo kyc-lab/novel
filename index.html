@@ -115,6 +115,29 @@
 
     <!-- 전개 회의실: 다음 화 전개 브레인스토밍 -->
     <section id="meeting" class="meeting" hidden data-tab="center">
+      <nav id="mtModes" class="mt-modes">
+        <button type="button" data-mode="dev">전개 회의</button>
+        <button type="button" data-mode="idea">아이디어 검토</button>
+        <button type="button" data-mode="trend">트렌드 자료</button>
+      </nav>
+      <div id="ideaPane" class="mt-pane" hidden>
+        <div class="mt-pane-box">
+          <textarea id="idText" class="pane-input" rows="5" placeholder="검토받고 싶은 아이디어를 적어줘.&#10;예: 회귀한 3류 무사가 무림맹 장부 정리 담당으로 들어가 장부 숫자로 음모를 파헤친다."></textarea>
+          <div class="mt-top mt-top-flat">
+            <select id="idScope" class="pick" aria-label="아이디어 종류"></select>
+            <button type="button" id="idStart" class="mini-btn primary">검토 시작</button>
+            <select id="idHistory" class="pick" aria-label="검토 기록"></select>
+          </div>
+          <p id="idStatus" class="mt-status"></p>
+          <div id="idResult"></div>
+        </div>
+      </div>
+      <div id="trendPane" class="mt-pane" hidden>
+        <div class="mt-pane-box">
+          <p class="hint">문피아 무료·유료 베스트 1~50위를 복사해서 붙여넣으면 AI가 장르·소재·반복 패턴으로 정리해 둬. 아이디어 검토와 전개 회의가 이걸 트렌드 기준으로 써. (앱이 문피아를 직접 읽어 올 수는 없어서 붙여넣는 방식이야.) 2주에 한 번쯤 갱신해줘.</p>
+          <div id="trendCards" class="tr-grid"></div>
+        </div>
+      </div>
       <div class="mt-top">
         <label class="mt-no">대상 <input id="mtNo" type="number" min="1" step="1"> 화</label>
         <input id="mtWish" class="pane-input" type="text" placeholder="이번 회차에서 원하는 것 (선택: 예) 철수와 영희가 처음 부딪히게)" autocomplete="off">

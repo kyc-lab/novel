@@ -1059,10 +1059,10 @@ body.ai-open #app { padding-right: 380px; }
   .meeting[data-tab="center"] #mtCenter,
   .meeting[data-tab="right"] #mtRight { display: block; }
   /* 전개안은 한 장씩 */
-  .mt-cards { display: block; }
-  .mt-card { display: none; }
-  .mt-card.mt-current { display: flex; }
-  .mt-card .mt-choice { display: none; }
+  #mtCenter .mt-cards { display: block; }
+  #mtCenter .mt-card { display: none; }
+  #mtCenter .mt-card.mt-current { display: flex; }
+  #mtCenter .mt-card .mt-choice { display: none; }
   .mt-pager { display: flex; justify-content: center; align-items: center; gap: 14px; margin: 8px 0; }
   .meeting[data-tab="center"] .mt-actions:not(:empty) {
     display: flex; gap: 8px; justify-content: center;
@@ -1076,3 +1076,24 @@ body.ai-open #app { padding-right: 380px; }
 .mt-cross p { margin: 2px 0; }
 .mt-roles .row { min-height: 40px; }
 .mt-roles .pick { max-width: 60%; }
+
+/* ── 회의실 모드: 전개 회의 / 아이디어 검토 / 트렌드 자료 ── */
+.mt-modes { display: flex; gap: 4px; padding: 10px 16px 0; }
+.mt-modes button { padding: 7px 14px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); font-size: 14px; }
+.mt-modes button.on { background: var(--accent); border-color: var(--accent); color: #17181B; font-weight: 700; }
+.meeting:not([data-mode="dev"]) > .mt-top,
+.meeting:not([data-mode="dev"]) > .mt-status,
+.meeting:not([data-mode="dev"]) > .mt-tabs,
+.meeting:not([data-mode="dev"]) > .mt-grid,
+.meeting:not([data-mode="dev"]) > .mt-actions { display: none !important; }
+.mt-pane { flex: 1; min-height: 0; overflow-y: auto; }
+.mt-pane[hidden] { display: none; }
+.mt-pane-box { max-width: 900px; margin: 0 auto; padding: 10px 16px 30vh; }
+.mt-top-flat { padding: 6px 0 0; }
+.tr-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 10px; margin-top: 10px; }
+.tr-card p { margin: 4px 0; font-size: 14px; line-height: 1.6; }
+@media (max-width: 800px) {
+  .mt-modes { padding: 8px 12px 0; overflow-x: auto; }
+  .mt-modes button { flex: none; }
+  .mt-pane-box { padding: 8px 12px 30vh; }
+}

@@ -516,7 +516,7 @@ export function init(ctx) {
 
   return {
     async open() {
-      meetings = await db.getMeetingsOf(ctx.workId());
+      meetings = (await db.getMeetingsOf(ctx.workId())).filter((m) => m.kind !== 'idea'); // 아이디어 검토 기록은 따로
       current = [...meetings].sort((a, b) => b.createdAt - a.createdAt)[0] ?? null;
       el.no.value = defaultTarget();
       page = 0;
@@ -529,9 +529,14 @@ export function init(ctx) {
     async reload() {
       if (busy) return;
       const id = current?.id;
-      meetings = await db.getMeetingsOf(ctx.workId());
+      meetings = (await db.getMeetingsOf(ctx.workId())).filter((m) => m.kind !== 'idea');
       current = meetings.find((m) => m.id === id) ?? current;
       render();
+    },
+    // 아이디어 검토에서 "이 아이디어로 전개 회의 열기"
+    prefillWish(text) {
+      el.wish.value = text;
+      refreshEstimate();
     },
     async patch(id, fn) {
       const m = meetings.find((x) => x.id === id);
