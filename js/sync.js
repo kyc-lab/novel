@@ -326,6 +326,7 @@ const worksPayload = (works, book) => ({
     .map((w) => ({
       id: w.id,
       title: w.title,
+      genre: w.genre ?? '', // 작법 팁을 고르는 장르(예: 현판 › 헌터 › 회빙환)
       createdAt: w.createdAt,
       updatedAt: w.updatedAt ?? w.createdAt,
       folderId: w.folderId ?? null, // 완료 회차(PDF·txt)를 모아 두는 이 작품의 드라이브 폴더

@@ -991,6 +991,12 @@ body.ai-open #app { padding-right: 380px; }
 }
 .nt-fields input { width: 5.5em; }
 .nt-fields input:last-child { width: 9em; }
+.nt-fields input.nt-genre { width: 13em; }
+.nt-genre-l { display: inline-flex; align-items: center; gap: 4px; }
+.nt-workgenre { margin-bottom: 12px; }
+.nt-work { font-size: 13px; white-space: nowrap; color: var(--muted, #9aa0a6); }
+.nt-gfilter { margin-bottom: 8px; }
+#idGenre { width: 14em; flex: 0 1 14em; min-width: 8em; }
 .nt-range[hidden] { display: none; }
 .nt-row { display: flex; gap: 10px; align-items: flex-start; }
 .nt-row .switch { margin-top: 3px; flex: none; }

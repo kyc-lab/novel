@@ -98,6 +98,8 @@
     <!-- 작법 노트: 모든 작품이 같이 쓰는 작법 팁 모음 -->
     <section id="notes" class="notes" hidden>
       <div class="notes-box">
+        <div id="ntWorkGenre" class="nt-workgenre"></div>
+        <div id="ntLegacy"></div>
         <h2 class="notes-h">팁 넣기</h2>
         <textarea id="ntText" class="pane-input" rows="5" placeholder="보거나 들은 작법 팁을 그대로 붙여넣어. 한 줄이든 긴 글이든 괜찮아.&#10;예: 3화 안에 주인공의 목표를 독자에게 보여줘야 한다. 회차 끝은 질문으로 끊어라."></textarea>
         <div class="nt-src-row">
@@ -108,6 +110,7 @@
         <div id="ntDraft"></div>
         <div id="ntConflicts"></div>
         <h2 class="notes-h">저장된 팁 <small id="ntCount"></small></h2>
+        <select id="ntGenreFilter" class="pick nt-gfilter" aria-label="장르로 보기"></select>
         <div id="ntFilter" class="chips"></div>
         <ul id="ntList" class="proof-list"></ul>
       </div>
@@ -125,6 +128,8 @@
           <textarea id="idText" class="pane-input" rows="5" placeholder="검토받고 싶은 아이디어를 적어줘.&#10;예: 회귀한 3류 무사가 무림맹 장부 정리 담당으로 들어가 장부 숫자로 음모를 파헤친다."></textarea>
           <div class="mt-top mt-top-flat">
             <select id="idScope" class="pick" aria-label="아이디어 종류"></select>
+            <input id="idGenre" class="pane-input nt-genre" type="text" list="ntGenreList" autocomplete="off" placeholder="장르 (비우면 이 작품 장르)" title="작법 팁 중 공통 + 이 장르 팁만 검토에 들어가. 새 작품 아이디어면 그 장르를 적어줘.">
+
             <button type="button" id="idStart" class="mini-btn primary">검토 시작</button>
             <select id="idHistory" class="pick" aria-label="검토 기록"></select>
           </div>

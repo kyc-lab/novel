@@ -11,7 +11,7 @@
 import * as db from './db.js';
 import * as ai from './ai.js';
 import { summariesText, loreText } from './context.js';
-import { activeTips } from './notes.js';
+import { activeTips, normGenre } from './notes.js';
 import { roles } from './meeting.js';
 import { askConfirm } from './dialogs.js';
 
@@ -110,7 +110,7 @@ function reviewerFor(providers, provider) {
   return providers.find((p) => p !== provider) ?? provider;
 }
 
-export async function review(ctx, { idea, scope }, onStep) {
+export async function review(ctx, { idea, scope, genre = '' }, onStep) {
   const R = roles();
   // 평가자 세 관점은 회의실 역할의 세 자리(과감한 전개·떡밥 회수·감정선 담당 회사)를 그대로 쓴다.
   const evaluators = ANGLES.map((a, i) => ({ ...a, provider: R.writers[i]?.provider ?? R.host }));
@@ -129,9 +129,10 @@ export async function review(ctx, { idea, scope }, onStep) {
   onStep('자료 모으는 중');
   const trends = await latestTrends();
   const hasWork = ctx.chapters().some((c) => c.body.trim());
-  const tips = await activeTips(ctx.workId(), ctx.chapters().length + 1);
+  // 장르를 적으면(새 작품 아이디어 등) 그 장르 팁, 비우면 지금 작품 장르 팁
+  const tips = await activeTips(ctx.workId(), ctx.chapters().length + 1, genre ? { genre } : {});
   const material =
-    `검토할 아이디어 (${scope}):\n${idea}\n\n` +
+    `검토할 아이디어 (${scope}${genre ? ` · ${genre}` : ''}):\n${idea}\n\n` +
     `트렌드 자료(문피아 상위 50):\n${trendText(trends)}\n\n` +
     (hasWork ? `지금 작품의 줄거리:\n${summariesText(ctx) || '없음'}\n\n지금 작품의 설정:\n${await loreText(ctx, { max: 5000 })}\n\n` : '지금 작품: 아직 원고 없음\n\n') +
     `작가의 작법 팁:\n${tips.map((t, i) => `${i + 1}. ${t.rule}`).join('\n') || '없음'}`;
@@ -186,6 +187,7 @@ export async function review(ctx, { idea, scope }, onStep) {
     kind: 'idea',
     idea,
     scope,
+    genre,
     evals,
     summary: {
       strengths: arr(s.strengths).map(String),
@@ -421,7 +423,7 @@ export function init(ctx) {
     });
     el.result.replaceChildren(
       h('section', { className: 'mt-brief' },
-        h('h3', { className: 'pane-h', textContent: `검토한 아이디어 · ${r.scope}` }),
+        h('h3', { className: 'pane-h', textContent: `검토한 아이디어 · ${r.scope}${r.genre ? ` · ${r.genre}` : ''}` }),
         h('p', { className: 'mt-summary', textContent: r.idea }),
         h('p', { className: 'hint', textContent: `트렌드 기준: 무료 ${r.trends.free ?? '없음'} · 유료 ${r.trends.paid ?? '없음'}${r.cost ? ' · 비용 ' + r.cost : ''}` })),
       h('section', { className: 'mt-brief' },
@@ -461,7 +463,8 @@ export function init(ctx) {
     busy = true;
     render();
     try {
-      const rec = await review(ctx, { idea, scope: el.scope.value }, (step) => (el.status.textContent = `${step}…`));
+      const genre = normGenre($('#idGenre').value.split(/[,，]/)[0]);
+      const rec = await review(ctx, { idea, scope: el.scope.value, genre }, (step) => (el.status.textContent = `${step}…`));
       await save(rec);
       records.push(rec);
       current = rec;

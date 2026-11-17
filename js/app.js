@@ -1054,6 +1054,18 @@ $('#mtModes').addEventListener('click', (e) => {
 // 작법 노트
 const notesPage = notes.init({
   workId: () => state.workId,
+  work: () => state.works.find((w) => w.id === state.workId) ?? null,
+  works: () => state.works,
+  // 작품 장르: 작법 팁 중 공통 + 이 장르 팁만 회의·검토에 들어간다. works.json 으로 기기끼리 공유.
+  async setWorkGenre(genre) {
+    const work = state.works.find((w) => w.id === state.workId);
+    if (!work) return;
+    work.genre = genre;
+    work.updatedAt = Date.now();
+    await db.put('works', work);
+    await sync.markWorksDirty();
+    markPending();
+  },
   onChange: () => markPending(),
   async onDelete(id) {
     await sync.addTombstone('note', id);
