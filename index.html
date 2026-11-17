@@ -337,9 +337,18 @@
           <div class="seg">
             <label><input type="radio" name="aiProvider" value="openai"><span>GPT</span></label>
             <label title="준비 중"><input type="radio" name="aiProvider" value="gemini"><span>제미나이</span></label>
-            <label title="준비 중"><input type="radio" name="aiProvider" value="claude"><span>Claude</span></label>
+            <label><input type="radio" name="aiProvider" value="claude"><span>Claude</span></label>
           </div>
         </div>
+        <div class="row">
+          <span>키·모델 관리</span>
+          <div class="seg" id="aiKeyTabs">
+            <label><input type="radio" name="aiKeyFor" value="openai"><span>GPT</span></label>
+            <label><input type="radio" name="aiKeyFor" value="gemini"><span>제미나이</span></label>
+            <label><input type="radio" name="aiKeyFor" value="claude"><span>Claude</span></label>
+          </div>
+        </div>
+        <p class="hint">AI 담당을 안 바꿔도 회사마다 키를 넣어 둘 수 있어. 전개 회의실은 여러 회사를 같이 써.</p>
         <div class="row add-row">
           <input id="aiKey" type="password" placeholder="API 키 붙여넣기" autocomplete="off" aria-label="API 키">
           <button type="button" id="aiKeySave" class="mini-btn">저장</button>

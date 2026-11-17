@@ -6,7 +6,7 @@
 import * as settings from './settings.js';
 
 const KEYS = 'aiKeys'; // { openai: 'sk-…', … } — 이 기기에만
-const TIMEOUT = 120000;
+const TIMEOUT = 300000; // 초안처럼 길게 쓰는 요청은 몇 분 걸릴 수 있다
 
 // 회사 목록. models = [모델 이름, 설명, 입력 가격, 출력 가격] (가격은 100만 토큰당 달러).
 // 모델 이름·가격은 2026-11 OpenAI 가격표 기준. 바뀌면 여기만 고치면 된다.
@@ -22,7 +22,17 @@ export const PROVIDERS = {
     ],
   },
   gemini: { name: '제미나이', ready: false, defaultModel: '', models: [] },
-  claude: { name: 'Claude', ready: false, defaultModel: '', models: [] },
+  // Claude 가격은 2026-11 Anthropic 가격표 기준
+  claude: {
+    name: 'Claude',
+    ready: true,
+    defaultModel: 'claude-opus-5-5',
+    models: [
+      ['claude-opus-5-5', '추천', 4.0, 20.0],
+      ['claude-sonnet-5-5', '반값', 2.0, 10.0],
+      ['claude-haiku-5-5', '가장 저렴', 0.1, 0.5],
+    ],
+  },
 };
 
 // ───────── 키 ─────────
@@ -88,9 +98,10 @@ async function explain(res, providerName) {
     // 본문이 없으면 상태 번호만으로 설명
   }
   if (res.status === 401) return `${providerName} 키가 맞지 않아. 설정에서 키를 다시 넣어줘.`;
-  if (res.status === 429 && /quota|billing/i.test(code + detail)) return `${providerName} 충전 금액이 없거나 월 한도에 닿았어. 결제 설정을 확인해줘.`;
+  if (/credit balance|quota|billing/i.test(code + detail) && (res.status === 400 || res.status === 429)) return `${providerName} 충전 금액이 없거나 월 한도에 닿았어. 결제 설정을 확인해줘.`;
   if (res.status === 429) return `${providerName} 요청이 너무 잦아. 잠깐 뒤에 다시 해줘.`;
   if (res.status === 404) return `고른 모델을 쓸 수 없어. 설정에서 다른 모델을 골라줘. (${detail})`;
+  if (res.status === 529) return `${providerName} 쪽이 지금 붐벼. 잠깐 뒤에 다시 해줘.`;
   return `${providerName} 오류 ${res.status}: ${detail || '알 수 없는 오류'}`;
 }
 
@@ -142,7 +153,69 @@ const openai = {
   },
 };
 
-const ADAPTERS = { openai };
+// Claude(Anthropic). 이 앱은 빌드 도구 없이 브라우저에서 바로 돌기 때문에(공식 SDK를 넣을 수 없어서) GPT처럼 HTTP로 직접 부른다.
+// 브라우저에서 바로 부를 때는 Anthropic이 정한 표시 헤더를 붙여야 한다(키가 브라우저에 있다는 걸 알고 쓴다는 뜻).
+const claude = {
+  headers: (key) => ({
+    'x-api-key': key,
+    'anthropic-version': '2026-10-21',
+    'anthropic-dangerous-direct-browser-access': 'true',
+    'content-type': 'application/json',
+  }),
+
+  async ask({ key, model, system, user, json, effort }) {
+    const body = {
+      model,
+      max_tokens: 16000,
+      messages: [{ role: 'user', content: user }],
+    };
+    // JSON으로 받을 때: 정해진 모양을 미리 채워 넣는 방식은 이 모델들에서 막혀 있어서, 지시문으로 요구하고 앱이 읽어 낸다.
+    const sys = json ? `${system}\n\n반드시 JSON 객체 하나만 출력한다. 앞뒤에 다른 말이나 코드 블록 표시를 붙이지 않는다.` : system;
+    if (sys) body.system = sys;
+    if (effort) body.output_config = { effort };
+    // 안전 검사로 거절되면 같은 요청을 다른 Claude 모델로 자동으로 다시 돌린다(서버가 해 줌).
+    const headers = { ...this.headers(key), 'anthropic-beta': 'server-side-fallback-2026-07-01' };
+    body.fallbacks = 'default';
+    const send = () =>
+      request('https://api.anthropic.com/v1/messages', { method: 'POST', headers, body: JSON.stringify(body) });
+    let res = await send();
+    // 모델이 이 옵션들을 모르면 빼고 다시 보낸다.
+    if (res.status === 400) {
+      const text = await res.clone().text();
+      let retry = false;
+      if (/fallback/i.test(text)) {
+        delete body.fallbacks;
+        delete headers['anthropic-beta'];
+        retry = true;
+      }
+      if (/effort|output_config/i.test(text) && body.output_config) {
+        delete body.output_config;
+        retry = true;
+      }
+      if (retry) res = await send();
+    }
+    if (!res.ok) throw new Error(await explain(res, 'Claude'));
+    const data = await res.json();
+    if (data.stop_reason === 'refusal') throw new Error('Claude가 이 요청은 답하지 않겠대. 내용을 조금 바꿔서 다시 해줘.');
+    const text = (data.content ?? [])
+      .filter((part) => part.type === 'text')
+      .map((part) => part.text)
+      .join('');
+    return {
+      text,
+      usage: { input: data.usage?.input_tokens ?? 0, output: data.usage?.output_tokens ?? 0 },
+    };
+  },
+
+  async listModels(key) {
+    const res = await request('https://api.anthropic.com/v1/models?limit=100', { headers: this.headers(key) });
+    if (!res.ok) throw new Error(await explain(res, 'Claude'));
+    const data = await res.json();
+    return (data.data ?? []).map((m) => m.id);
+  },
+};
+
+const ADAPTERS = { openai, claude };
 
 // AI에게 묻는다. { system: 역할·규칙, user: 내용, json: 답을 JSON으로 받을지 }
 // 돌려주는 것: { text, usage: { input, output }, provider, model }
@@ -173,14 +246,20 @@ export function initPanel(dialog) {
   const testBtn = $('#aiTest');
   const testMsg = $('#aiTestMsg');
   let extraModels = []; // 연결 시험 때 받아온, 이 키로 쓸 수 있는 다른 모델들
+  let keyFor = currentProvider(); // 지금 키·모델을 보고 있는 회사(AI 담당과 따로)
 
   function render() {
-    const provider = currentProvider();
-    const info = PROVIDERS[provider];
     for (const radio of dialog.querySelectorAll('input[name="aiProvider"]')) {
       radio.disabled = !PROVIDERS[radio.value].ready;
-      radio.checked = radio.value === provider;
+      radio.checked = radio.value === currentProvider();
     }
+    if (!PROVIDERS[keyFor]?.ready) keyFor = currentProvider();
+    for (const radio of dialog.querySelectorAll('input[name="aiKeyFor"]')) {
+      radio.disabled = !PROVIDERS[radio.value].ready;
+      radio.checked = radio.value === keyFor;
+    }
+    const provider = keyFor;
+    const info = PROVIDERS[provider];
     keyState.textContent = hasKey(provider)
       ? `${info.name} 키 저장됨 (${maskKey(provider)}) · 이 기기에만 있어`
       : `${info.name} 키가 아직 없어. 키를 붙여넣고 "저장"을 눌러줘.`;
@@ -202,21 +281,34 @@ export function initPanel(dialog) {
   $('#aiKeySave').addEventListener('click', () => {
     const key = keyInput.value.trim();
     if (!key) return;
-    setKey(currentProvider(), key);
+    setKey(keyFor, key);
     keyInput.value = '';
     testMsg.textContent = '키를 저장했어. "연결 시험"을 눌러서 되는지 확인해봐.';
     render();
   });
   $('#aiKeyDel').addEventListener('click', () => {
-    setKey(currentProvider(), '');
+    setKey(keyFor, '');
     testMsg.textContent = '';
     render();
   });
   modelSel.addEventListener('change', () => {
-    settings.update({ aiModels: { ...(settings.get().aiModels ?? {}), [currentProvider()]: modelSel.value } });
+    settings.update({ aiModels: { ...(settings.get().aiModels ?? {}), [keyFor]: modelSel.value } });
   });
   for (const radio of dialog.querySelectorAll('input[name="aiProvider"]')) {
-    radio.addEventListener('change', () => setTimeout(render)); // 설정에 반영된 다음 다시 그린다
+    radio.addEventListener('change', () => {
+      keyFor = radio.value; // 담당을 바꾸면 그 회사의 키·모델을 보여준다
+      extraModels = [];
+      setTimeout(render); // 설정에 반영된 다음 다시 그린다
+    });
+  }
+  for (const radio of dialog.querySelectorAll('input[name="aiKeyFor"]')) {
+    radio.addEventListener('change', (e) => {
+      e.stopPropagation();
+      keyFor = radio.value;
+      extraModels = [];
+      testMsg.textContent = '';
+      render();
+    });
   }
 
   testBtn.addEventListener('click', async () => {
@@ -224,12 +316,12 @@ export function initPanel(dialog) {
     testMsg.classList.remove('warn');
     testMsg.textContent = '물어보는 중…';
     try {
-      const res = await ask({ user: '연결 시험이야. "연결됐어" 한 마디만 답해줘.' });
+      const res = await ask({ provider: keyFor, user: '연결 시험이야. "연결됐어" 한 마디만 답해줘.' });
       testMsg.textContent = `됐어. ${PROVIDERS[res.provider].name}(${res.model})의 답: "${res.text.trim().slice(0, 40)}"`;
       // 이 키로 쓸 수 있는 모델을 목록에 더한다(글 쓰는 모델만).
       try {
-        extraModels = (await listModels())
-          .filter((id) => /^gpt-\d/.test(id) && !/audio|realtime|image|tts|transcribe|embedding|search|codex|instruct/.test(id))
+        extraModels = (await listModels(keyFor))
+          .filter((id) => (keyFor === 'claude' ? /^claude-/.test(id) : /^gpt-\d/.test(id)) && !/audio|realtime|image|tts|transcribe|embedding|search|codex|instruct/.test(id))
           .sort()
           .reverse();
         render();
