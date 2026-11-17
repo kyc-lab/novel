@@ -227,54 +227,137 @@ export function init(ctx) {
   };
 
   // ── 트렌드 자료 카드 ──
+  // 붙여넣기 또는 스크린샷 → AI가 목록을 뽑음 → 저장 전에 표로 확인·수정 → 저장
+  const drafts = {}; // 출처별로 확인 중인 결과 { items, summary, raw, costText, by }
+  let reader = null; // 목록·사진을 읽을 AI(기본: AI 담당)
+
+  async function extract(src, { text = '', images = [] }) {
+    const info = SOURCES[src];
+    const provider = reader && ai.hasKey(reader) ? reader : ai.currentProvider();
+    if (!ai.hasKey(provider)) throw new Error('AI 키가 없어. 설정(⚙) → AI에서 키를 넣어줘.');
+    const user = images.length
+      ? `${info.name} 상위 목록 스크린샷 ${images.length}장이야. 여러 장에 같은 순위가 겹쳐 찍혔으면 하나로 합친다. 사진에서 읽을 수 없는 글자는 추측하지 말고 보이는 만큼만 쓴다.`
+      : `붙여넣은 목록:\n${text}`;
+    const res = await ai.ask({ provider, system: PARSE(info.name), user, json: true, images, effort: images.length ? undefined : 'low' });
+    const d = parse(res.text);
+    const items = arr(d.items)
+      .filter((x) => x && x.title)
+      .map((x, i) => ({ rank: Number(x.rank) || i + 1, title: String(x.title).trim(), genre: String(x.genre ?? '기타'), tags: arr(x.tags).map(String).slice(0, 3) }))
+      .sort((a, b) => a.rank - b.rank)
+      .filter((x, i, all) => all.findIndex((y) => y.rank === x.rank) === i) // 겹친 순위는 하나만
+      .slice(0, 50);
+    if (!items.length) throw new Error(images.length ? '사진에서 작품 목록을 못 읽었어. 순위와 제목이 보이게 찍었는지 봐줘.' : '목록에서 작품을 못 찾았어. 순위와 제목이 들어간 부분을 복사했는지 봐줘.');
+    const s = d.summary ?? {};
+    return {
+      items,
+      summary: {
+        genres: arr(s.genres).map((g) => ({ name: String(g.name), count: Number(g.count) || 0 })),
+        keywords: arr(s.keywords).map(String),
+        tropes: arr(s.tropes).map(String),
+        notes: String(s.notes ?? ''),
+      },
+      raw: text || `(스크린샷 ${images.length}장)`,
+      costText: ai.fmtWon(ai.estimateWon(res.provider, res.model, res.usage)),
+      by: res.provider,
+    };
+  }
+
+  // 사진을 글씨가 읽힐 정도로만 줄여서 JPEG로 바꾼다(비용·전송량 절약).
+  async function shrink(file) {
+    const bmp = await createImageBitmap(file);
+    const scale = Math.min(1, 1600 / bmp.width, 2600 / bmp.height);
+    const c = document.createElement('canvas');
+    c.width = Math.round(bmp.width * scale);
+    c.height = Math.round(bmp.height * scale);
+    c.getContext('2d').drawImage(bmp, 0, 0, c.width, c.height);
+    bmp.close?.();
+    const url = c.toDataURL('image/jpeg', 0.85);
+    return { mime: 'image/jpeg', data: url.slice(url.indexOf(',') + 1) };
+  }
+
+  // 저장 전 확인 표: 순위·제목·장르·태그를 고치거나 뺄 수 있다.
+  function draftTable(src) {
+    const d = drafts[src];
+    const rows = d.items.map((x) => {
+      const rank = h('input', { type: 'number', value: x.rank, className: 'tr-rank' });
+      rank.addEventListener('input', () => (x.rank = Number(rank.value) || x.rank));
+      const title = h('input', { type: 'text', value: x.title, className: 'tr-title' });
+      title.addEventListener('input', () => (x.title = title.value.trim()));
+      const genre = h('input', { type: 'text', value: x.genre, className: 'tr-genre' });
+      genre.addEventListener('input', () => (x.genre = genre.value.trim() || '기타'));
+      const tags = h('input', { type: 'text', value: x.tags.join(', '), className: 'tr-tags' });
+      tags.addEventListener('input', () => (x.tags = tags.value.split(',').map((t) => t.trim()).filter(Boolean).slice(0, 3)));
+      const del = h('button', { type: 'button', className: 'st-del', textContent: '✕', title: '이 줄 빼기' });
+      del.addEventListener('click', () => {
+        d.items = d.items.filter((y) => y !== x);
+        renderTrends();
+      });
+      return h('tr', {}, h('td', {}, rank), h('td', {}, title), h('td', {}, genre), h('td', {}, tags), h('td', {}, del));
+    });
+    const ok = h('button', { type: 'button', className: 'mini-btn primary', textContent: `${d.items.length}개 저장` });
+    ok.addEventListener('click', async () => {
+      const items = d.items.filter((x) => x.title).sort((a, b) => a.rank - b.rank).slice(0, 50);
+      await save({ id: uid(), source: src, date: today(), raw: d.raw, items, summary: d.summary, createdAt: Date.now() }, 'trends');
+      delete drafts[src];
+      renderTrends();
+    });
+    const cancel = h('button', { type: 'button', className: 'mini-btn', textContent: '취소' });
+    cancel.addEventListener('click', () => {
+      delete drafts[src];
+      renderTrends();
+    });
+    const missing = 50 - d.items.length;
+    return h('div', { className: 'tr-draft' },
+      h('p', { className: 'hint', textContent: `${ai.PROVIDERS[d.by]?.name ?? ''}가 ${d.items.length}개를 읽었어${d.costText ? ` · ${d.costText}` : ''}. 잘못 읽은 제목은 고치고, 이상한 줄은 ✕로 빼고 저장해.${missing > 0 ? ` (50개 중 ${missing}개가 비어 있어. 취소하고 빠진 부분까지 다시 올려도 돼.)` : ''}` }),
+      h('div', { className: 'tr-table-wrap' }, h('table', { className: 'tr-table' }, h('tr', {}, ['순위', '제목', '장르', '태그', ''].map((t) => h('th', { textContent: t }))), rows)),
+      h('div', { className: 'proof-btns' }, cancel, ok));
+  }
+
   async function renderTrends() {
     const latest = await latestTrends();
+    // 목록·사진을 읽을 AI 고르기
+    const pick = h('select', { className: 'pick' });
+    for (const [id, p] of Object.entries(ai.PROVIDERS)) {
+      const o = new Option(p.name + (ai.hasKey(id) ? ` · ${ai.currentModel(id)}` : ' (키 없음)'), id, false, id === (reader ?? ai.currentProvider()));
+      o.disabled = !p.ready || !ai.hasKey(id);
+      pick.append(o);
+    }
+    pick.addEventListener('change', () => (reader = pick.value));
     el.trends.replaceChildren(
+      h('label', { className: 'row tr-reader' }, h('span', { textContent: '목록·사진을 읽을 AI' }), pick),
       ...Object.entries(SOURCES).map(([src, info]) => {
         const t = src === 'munpia-free' ? latest.free : latest.paid;
         const stale = t && days(t.createdAt) >= STALE_DAYS;
-        const raw = h('textarea', { className: 'pane-input', rows: 6, placeholder: `${info.name} 페이지에서 1위~50위를 드래그해서 복사한 다음 여기에 붙여넣어. 소개글·조회수가 섞여도 괜찮아.` });
-        const go = h('button', { type: 'button', className: 'mini-btn primary', textContent: 'AI로 정리해서 저장' });
         const msg = h('p', { className: 'hint' });
-        go.addEventListener('click', async () => {
-          const text = raw.value.trim();
-          if (!text) return raw.focus();
-          if (!ai.hasKey(ai.currentProvider())) return (msg.textContent = 'AI 키가 없어. 설정(⚙) → AI에서 키를 넣어줘.');
-          go.disabled = true;
-          msg.textContent = 'AI가 목록을 정리하는 중…';
+        const raw = h('textarea', { className: 'pane-input', rows: 5, placeholder: `${info.name} 페이지에서 1위~50위를 드래그해서 복사한 다음 여기에 붙여넣어. 소개글·조회수가 섞여도 괜찮아.` });
+        const go = h('button', { type: 'button', className: 'mini-btn primary', textContent: '붙여넣은 글 정리' });
+        const file = h('input', { type: 'file', accept: 'image/*', multiple: true, hidden: true });
+        const shot = h('button', { type: 'button', className: 'mini-btn primary', textContent: '스크린샷 올리기' });
+        const busyOn = (on, text = '') => {
+          go.disabled = on;
+          shot.disabled = on;
+          msg.textContent = text;
+        };
+        const run = async (input) => {
+          busyOn(true, input.images?.length ? `AI가 스크린샷 ${input.images.length}장을 읽는 중… (1분쯤 걸릴 수 있어)` : 'AI가 목록을 정리하는 중…');
           try {
-            const res = await ai.ask({ system: PARSE(info.name), user: `붙여넣은 목록:\n${text}`, json: true, effort: 'low' });
-            const d = parse(res.text);
-            const items = arr(d.items)
-              .filter((x) => x && x.title)
-              .slice(0, 50)
-              .map((x, i) => ({ rank: Number(x.rank) || i + 1, title: String(x.title), genre: String(x.genre ?? '기타'), tags: arr(x.tags).map(String).slice(0, 3) }));
-            if (!items.length) throw new Error('목록에서 작품을 못 찾았어. 순위와 제목이 들어간 부분을 복사했는지 봐줘.');
-            const s = d.summary ?? {};
-            await save(
-              {
-                id: uid(),
-                source: src,
-                date: today(),
-                raw: text,
-                items,
-                summary: {
-                  genres: arr(s.genres).map((g) => ({ name: String(g.name), count: Number(g.count) || 0 })),
-                  keywords: arr(s.keywords).map(String),
-                  tropes: arr(s.tropes).map(String),
-                  notes: String(s.notes ?? ''),
-                },
-                createdAt: Date.now(),
-              },
-              'trends',
-            );
-            msg.textContent = `${items.length}개 작품을 정리해서 저장했어. ${ai.fmtWon(ai.estimateWon(res.provider, res.model, res.usage))}`;
-            raw.value = '';
+            drafts[src] = await extract(src, input);
             renderTrends();
           } catch (err) {
-            msg.textContent = err.message;
-          } finally {
-            go.disabled = false;
+            busyOn(false, err.message);
+          }
+        };
+        go.addEventListener('click', () => (raw.value.trim() ? run({ text: raw.value.trim() }) : raw.focus()));
+        shot.addEventListener('click', () => file.click());
+        file.addEventListener('change', async () => {
+          const files = [...file.files].slice(0, 12);
+          file.value = '';
+          if (!files.length) return;
+          busyOn(true, `사진 ${files.length}장 준비하는 중…`);
+          try {
+            await run({ images: await Promise.all(files.map(shrink)) });
+          } catch (err) {
+            busyOn(false, `사진을 읽지 못했어: ${err.message}`);
           }
         });
         const s = t?.summary;
@@ -289,7 +372,15 @@ export function init(ctx) {
                 s.notes ? h('p', { className: 'hint', textContent: s.notes }) : null,
                 h('details', { className: 'pane-details' }, h('summary', { textContent: '목록 보기' }), h('ol', { className: 'mt-list' }, t.items.map((x) => h('li', { textContent: `${x.title} · ${x.genre}${x.tags.length ? ' · ' + x.tags.join('/') : ''}` })))))
             : h('p', { className: 'hint', textContent: '아직 자료가 없어.' }),
-          h('details', { className: 'pane-details', open: !t || stale }, h('summary', { textContent: t ? '새로 붙여넣어 갱신' : '붙여넣기' }), raw, h('div', { className: 'proof-btns' }, go), msg),
+          drafts[src]
+            ? draftTable(src)
+            : h('details', { className: 'pane-details', open: !t || stale },
+                h('summary', { textContent: t ? '새로 갱신하기' : '자료 넣기' }),
+                h('div', { className: 'proof-btns tr-shot' }, h('span', { className: 'hint', textContent: '1~50위가 다 보이게 여러 장 찍어서 한꺼번에 골라도 돼' }), shot, file),
+                h('p', { className: 'hint', textContent: '또는 글로 붙여넣기:' }),
+                raw,
+                h('div', { className: 'proof-btns' }, go),
+                msg),
         );
       }),
     );

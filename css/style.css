@@ -1097,3 +1097,14 @@ body.ai-open #app { padding-right: 380px; }
   .mt-modes button { flex: none; }
   .mt-pane-box { padding: 8px 12px 30vh; }
 }
+.tr-reader { grid-column: 1 / -1; }
+.tr-shot { align-items: center; flex-wrap: wrap; }
+.tr-shot .hint { margin-right: auto; }
+.tr-table-wrap { max-height: 50vh; overflow: auto; border: 1px solid var(--line); border-radius: 8px; margin: 6px 0; }
+.tr-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.tr-table th { position: sticky; top: 0; background: var(--panel-2); text-align: left; padding: 5px; }
+.tr-table td { padding: 3px; border-top: 1px solid var(--line); }
+.tr-table input { width: 100%; background: transparent; border: 1px solid transparent; border-radius: 4px; padding: 4px; }
+.tr-table input:focus { border-color: var(--accent); outline: none; }
+.tr-rank { width: 3.5em !important; }
+.tr-genre { width: 6em !important; }

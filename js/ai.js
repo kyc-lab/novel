@@ -118,9 +118,13 @@ async function explain(res, providerName) {
 const openai = {
   headers: (key) => ({ Authorization: 'Bearer ' + key, 'Content-Type': 'application/json' }),
 
-  async ask({ key, model, system, user, json, effort }) {
+  async ask({ key, model, system, user, json, effort, images = [] }) {
     // JSON으로 받으려면 GPT는 "질문 본문"에 json이라는 말이 꼭 있어야 한다(지시문에만 있으면 거절).
-    const input = json && !/json/i.test(user) ? `${user}\n\n(답은 JSON 객체 하나로)` : user;
+    const prompt = json && !/json/i.test(user) ? `${user}\n\n(답은 JSON 객체 하나로)` : user;
+    // 사진이 있으면 글과 사진을 한 메시지에 같이 넣는다.
+    const input = images.length
+      ? [{ role: 'user', content: [{ type: 'input_text', text: prompt }, ...images.map((i) => ({ type: 'input_image', image_url: `data:${i.mime};base64,${i.data}` }))] }]
+      : prompt;
     const body = { model, input };
     if (system) body.instructions = system;
     if (json) body.text = { format: { type: 'json_object' } };
@@ -173,11 +177,14 @@ const claude = {
     'content-type': 'application/json',
   }),
 
-  async ask({ key, model, system, user, json, effort }) {
+  async ask({ key, model, system, user, json, effort, images = [] }) {
+    const content = images.length
+      ? [...images.map((i) => ({ type: 'image', source: { type: 'base64', media_type: i.mime, data: i.data } })), { type: 'text', text: user }]
+      : user;
     const body = {
       model,
       max_tokens: 16000,
-      messages: [{ role: 'user', content: user }],
+      messages: [{ role: 'user', content }],
     };
     // JSON으로 받을 때: 정해진 모양을 미리 채워 넣는 방식은 이 모델들에서 막혀 있어서, 지시문으로 요구하고 앱이 읽어 낸다.
     const sys = json ? `${system}\n\n반드시 JSON 객체 하나만 출력한다. 앞뒤에 다른 말이나 코드 블록 표시를 붙이지 않는다.` : system;
@@ -230,9 +237,9 @@ const gemini = {
   base: 'https://generativelanguage.googleapis.com/v1beta',
   headers: (key) => ({ 'x-goog-api-key': key, 'content-type': 'application/json' }),
 
-  async ask({ key, model, system, user, json, effort }) {
+  async ask({ key, model, system, user, json, effort, images = [] }) {
     const body = {
-      contents: [{ role: 'user', parts: [{ text: user }] }],
+      contents: [{ role: 'user', parts: [...images.map((i) => ({ inlineData: { mimeType: i.mime, data: i.data } })), { text: user }] }],
       generationConfig: { maxOutputTokens: 16000 },
     };
     if (system) body.systemInstruction = { parts: [{ text: system }] };
@@ -281,14 +288,14 @@ const ADAPTERS = { openai, claude, gemini };
 
 // AI에게 묻는다. { system: 역할·규칙, user: 내용, json: 답을 JSON으로 받을지 }
 // 돌려주는 것: { text, usage: { input, output }, provider, model }
-export async function ask({ system = '', user, json = false, effort, provider = currentProvider(), model }) {
+export async function ask({ system = '', user, json = false, effort, images = [], provider = currentProvider(), model }) {
   const info = PROVIDERS[provider];
   const adapter = ADAPTERS[provider];
   if (!info?.ready || !adapter) throw new Error(`${info?.name ?? provider}는 아직 준비 중이야. 설정에서 다른 회사를 골라줘.`);
   const key = getKey(provider);
   if (!key) throw new Error(`${info.name} API 키가 없어. 설정에서 키를 넣어줘.`);
   const useModel = model || currentModel(provider);
-  const result = await adapter.ask({ key, model: useModel, system, user, json, effort });
+  const result = await adapter.ask({ key, model: useModel, system, user, json, effort, images });
   return { ...result, provider, model: useModel };
 }
 
